@@ -109,12 +109,55 @@ def collate(
             )
     else:
         ntokens = src_lengths.sum().item()
-
+    # START YOUR CODE
+    n = len(src_tokens)
+    graph_padding = torch.tensor([pad_idx] * n).long().unsqueeze(-1)
+    src_tokens = torch.cat([graph_padding, src_tokens],dim=1)
+    extra_length = src_tokens.eq(pad_idx).long().sum(1)
+    max_len_select = max(len(samples[i]['src_selected_idx']) for i in range(len(samples)))
+    max_len_nodes = max(len(samples[i]['src_node_idx']) for i in range(len(samples)))
+    seq_len = src_tokens.size(1)
+    src_labels = [samples[i]['src_labels'] for i in sort_order]
+    def tensorSelectedIndex(data, obj, max_len):
+        i, e = data
+        x = samples[i][obj] + e
+        pad = torch.LongTensor([0] * (max_len - x.size(0)))
+        return torch.cat([pad, x], dim = 0)
+    src_selected_idx = torch.cat([tensorSelectedIndex(data, "src_selected_idx", max_len_select) for data in zip(sort_order, extra_length)],dim=0).reshape(-1, max_len_select)
+    src_node_idx = torch.cat([tensorSelectedIndex(data, "src_node_idx", max_len_nodes) for data in zip(sort_order, extra_length)],dim=0).reshape(-1, max_len_nodes)
+    def tensorEdges(data):
+        i, [order, e] = data
+        edge = samples[order]['src_edges'] + e # move idx to the right, since padding to the left
+        edge = edge + i * seq_len
+        return edge
+    src_edges = None
+    for data in enumerate(zip(sort_order, extra_length)):
+      r = tensorEdges(data)
+      if src_edges == None:
+        src_edges = r
+      else:
+        src_edges = torch.cat([src_edges, r], dim = 1) # shape = [2, Edges]
+    src_labels = None
+    for s in sort_order:
+        l = samples[s]['src_labels']
+        if src_labels == None:
+            src_labels = l
+        else:
+            src_labels = torch.cat([src_labels, l], dim = 0) # shape = [Labels]
+    assert src_edges.size(1) == src_labels.size(0)
+    # END YOUR CODE
     batch = {
         "id": id,
         "nsentences": len(samples),
         "ntokens": ntokens,
-        "net_input": {"src_tokens": src_tokens, "src_lengths": src_lengths,},
+        "net_input": {
+            "src_tokens": src_tokens,
+            "src_lengths": src_lengths,
+            "src_edges": src_edges,
+            "src_labels": src_labels,
+            "src_selected_idx": src_selected_idx,
+            "src_node_idx": src_node_idx
+        },
         "target": target,
     }
     if prev_output_tokens is not None:
@@ -160,7 +203,29 @@ def collate(
         batch["constraints"] = constraints.index_select(0, sort_order)
 
     return batch
-
+# START YOUR CODE
+class UCCALabel:
+  def __init__(self):
+    self.labels = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'L', 'N', 'P', 'R', 'S', 'U']
+    self.label_dict = {} # total 13 labels
+    self.setupDict()
+  def length(self):
+    return len(self.labels)
+  def setupDict(self):
+    for label in (self.labels):
+      self.pushToDict(label)
+  def pushToDict(self, label):
+    if label not in self.label_dict:
+      self.label_dict[label] = len(self.label_dict)
+  def getIdx(self, label):
+    assert label in self.label_dict, label
+    return self.label_dict[label]
+  def Label2Seq(self, label):
+    label_list = []
+    for l in label:
+      label_list.append(torch.LongTensor(list(map(self.getIdx, l))))
+    return label_list
+# END YOUR CODE
 
 class LanguagePairDataset(FairseqDataset):
     """
@@ -294,7 +359,14 @@ class LanguagePairDataset(FairseqDataset):
         else:
             self.buckets = None
         self.pad_to_multiple = pad_to_multiple
-
+        # START YOUR CODE
+        self.src_edges = src_edges
+        self.ucca = UCCALabel()
+        self.src_labels = self.ucca.Label2Seq(src_labels)
+        self.intnode_index = self.src_dict.intnode()
+        self.src_selected_idx = self.get_selected_index()
+        self.src_node_idx = self.get_node_index()
+        # END YOUR CODE
     def get_batch_shapes(self):
         return self.buckets
 

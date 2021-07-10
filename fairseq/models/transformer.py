@@ -197,6 +197,14 @@ class TransformerModel(FairseqEncoderDecoderModel):
                             help='block size of quantization noise at training time')
         parser.add_argument('--quant-noise-scalar', type=float, metavar='D', default=0,
                             help='scalar quantization noise and scalar quantization at training time')
+        # START YOUR CODE
+        parser.add_argument('--graph-type', type=str, metavar='STR',
+                            help='graph module type e.g: GAT, Sage, normal')
+        parser.add_argument('--is-graph-outside', default=False, action='store_true',
+                            help='if true, graph encoder outside the Transformer')
+        parser.add_argument('--is-phrase-information', default=False, action='store_true',
+                            help='if true, using x_phrase information instead x_graph for cross-attention')
+        # END YOUR CODE
         # args for Fully Sharded Data Parallel (FSDP) training
         parser.add_argument(
             '--min-params-to-wrap', type=int, metavar='D', default=DEFAULT_MIN_PARAMS_TO_WRAP,
@@ -299,6 +307,12 @@ class TransformerModel(FairseqEncoderDecoderModel):
         self,
         src_tokens,
         src_lengths,
+        # START YOUR CODE
+        src_edges,
+        src_labels,
+        src_selected_idx,
+        src_node_idx,
+        # END YOUR CODE
         prev_output_tokens,
         return_all_hiddens: bool = True,
         features_only: bool = False,
@@ -406,7 +420,10 @@ class TransformerEncoder(FairseqEncoder):
             self.layer_norm = LayerNorm(embed_dim, export=export)
         else:
             self.layer_norm = None
-
+        # START YOUR CODE
+        self.label_embedding = nn.Embedding(13, embed_dim)
+        nn.init.normal_(self.label_embedding.weight, mean=0, std=embed_dim ** -0.5)
+        # END YOUR CODE
     def build_encoder_layer(self, args):
         layer = TransformerEncoderLayer(args)
         checkpoint = getattr(args, "checkpoint_activations", False)
@@ -424,25 +441,42 @@ class TransformerEncoder(FairseqEncoder):
         return layer
 
     def forward_embedding(
-        self, src_tokens, token_embedding: Optional[torch.Tensor] = None
+        self, src_tokens, src_selected_idx, token_embedding: Optional[torch.Tensor] = None,
     ):
         # embed tokens and positions
         if token_embedding is None:
             token_embedding = self.embed_tokens(src_tokens)
-        x = embed = self.embed_scale * token_embedding
+            batch, seql, dim = token_embedding.shape
+            src_tokens = torch.gather(src_tokens, 1, src_selected_idx)
+            x = torch.gather(token_embedding, 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
+            x_graph = token_embedding
+        x = embed = self.embed_scale * x
+        x_graph = self.embed_scale * x_graph
         if self.embed_positions is not None:
-            x = embed + self.embed_positions(src_tokens)
+            embed_pos = self.embed_positions(src_tokens)
+            x = x + embed_pos
         if self.layernorm_embedding is not None:
             x = self.layernorm_embedding(x)
+            x_graph = self.layernorm_embedding(x_graph)
+            embed_pos = self.layernorm_embedding(embed_pos)
         x = self.dropout_module(x)
+        x_graph = self.dropout_module(x_graph)
+        embed_pos = self.dropout_module(embed_pos)
         if self.quant_noise is not None:
             x = self.quant_noise(x)
-        return x, embed
+            x_graph = self.quant_noise(x_graph)
+            embed_pos = self.quant_noise(embed_pos)
+        x_graph = x_graph.reshape(batch * seql, dim)
+        return x, embed, x_graph, embed_pos, src_tokens
 
     def forward(
         self,
         src_tokens,
-        src_lengths: Optional[torch.Tensor] = None,
+        src_lengths,
+        src_edges,
+        src_labels,
+        src_selected_idx,
+        src_node_idx,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
@@ -470,8 +504,11 @@ class TransformerEncoder(FairseqEncoder):
                   Only populated if *return_all_hiddens* is True.
         """
         return self.forward_scriptable(
-            src_tokens, src_lengths, return_all_hiddens, token_embeddings
-        )
+            src_tokens, src_lengths, src_edges,
+            src_labels,
+            src_selected_idx,
+            src_node_idx, return_all_hiddens, token_embeddings
+            )
 
     # TorchScript doesn't support super() method so that the scriptable Subclass
     # can't access the base class model in Torchscript.
@@ -480,7 +517,11 @@ class TransformerEncoder(FairseqEncoder):
     def forward_scriptable(
         self,
         src_tokens,
-        src_lengths: Optional[torch.Tensor] = None,
+        src_lengths,
+        src_edges,
+        src_labels,
+        src_selected_idx,
+        src_node_idx,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
@@ -511,7 +552,18 @@ class TransformerEncoder(FairseqEncoder):
         encoder_padding_mask = src_tokens.eq(self.padding_idx)
         has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
-        x, encoder_embedding = self.forward_embedding(src_tokens, token_embeddings)
+        x, encoder_embedding, x_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
+        src_labels = self.label_embedding(src_labels)
+        src_labels = self.embed_scale * src_labels
+        src_labels = self.dropout_module(src_labels)
+        if self.quant_noise is not None:
+            src_labels = self.quant_noise(src_labels)
+        if self.is_graph_outside == True:
+            x_graph, src_labels = self.graph_encode(x_graph, src_edges, src_labels)
+            batch, dim = x.size(0), x.size(2) 
+            x_graph = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
+            x_graph += self.dropout_module(embed_pos)
+            x_graph = x_graph.transpose(0, 1)
 
         # account for padding while computing the representation
         if has_pads:
@@ -530,6 +582,7 @@ class TransformerEncoder(FairseqEncoder):
             x = layer(
                 x, encoder_padding_mask=encoder_padding_mask if has_pads else None
             )
+            x, x_graph, src_labels = layer(x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos, encoder_phrase_padding_mask, encoder_padding_mask)
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)

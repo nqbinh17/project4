@@ -334,7 +334,19 @@ class TranslationTask(FairseqTask):
 
         # infer langcode
         src, tgt = self.cfg.source_lang, self.cfg.target_lang
-
+        # START YOUR CODE
+        if split == 'train':
+            graph_path = self.args.graph_train_path
+        elif split == 'valid':
+            graph_path = self.args.graph_valid_path
+        elif split == 'test':
+            graph_path = self.args.graph_test_path
+            if graph_path == None:
+              graph_path = "data_bin/graph_data/IWSLT15.TED.tst2015.en-vi"
+        else:
+            graph_path = None
+            logger.info("No support split {}".format(split))
+        # END YOUR CODE
         self.datasets[split] = load_langpair_dataset(
             data_path,
             split,
