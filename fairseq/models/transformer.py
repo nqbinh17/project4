@@ -326,7 +326,9 @@ class TransformerModel(FairseqEncoderDecoderModel):
         which are not supported by TorchScript.
         """
         encoder_out = self.encoder(
-            src_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
+            src_tokens, src_lengths=src_lengths,
+            src_edges = src_edges, src_labels= src_labels, 
+            src_selected_idx = src_selected_idx, src_node_idx = src_node_idx, return_all_hiddens=return_all_hiddens
         )
         decoder_out = self.decoder(
             prev_output_tokens,
@@ -558,20 +560,13 @@ class TransformerEncoder(FairseqEncoder):
         src_labels = self.dropout_module(src_labels)
         if self.quant_noise is not None:
             src_labels = self.quant_noise(src_labels)
-        if self.is_graph_outside == True:
-            x_graph, src_labels = self.graph_encode(x_graph, src_edges, src_labels)
-            batch, dim = x.size(0), x.size(2) 
-            x_graph = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
-            x_graph += self.dropout_module(embed_pos)
-            x_graph = x_graph.transpose(0, 1)
+
 
         # account for padding while computing the representation
-        if has_pads:
-            x = x * (1 - encoder_padding_mask.unsqueeze(-1).type_as(x))
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
-
+        encoder_padding_mask = src_tokens.eq(self.padding_idx)
         encoder_states = []
 
         if return_all_hiddens:
@@ -579,10 +574,7 @@ class TransformerEncoder(FairseqEncoder):
 
         # encoder layers
         for layer in self.layers:
-            x = layer(
-                x, encoder_padding_mask=encoder_padding_mask if has_pads else None
-            )
-            x, x_graph, src_labels = layer(x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos, encoder_phrase_padding_mask, encoder_padding_mask)
+            x, x_graph, src_labels = layer(x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos, encoder_padding_mask)
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)

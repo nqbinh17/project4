@@ -12,7 +12,9 @@ from fairseq.modules import LayerNorm, MultiheadAttention
 from fairseq.modules.fairseq_dropout import FairseqDropout
 from fairseq.modules.quant_noise import quant_noise
 from torch import Tensor
-
+# START YOUR CODE
+from fairseq.modules.graph_modules import UCCAEncoder, GatingResidual, FeedForward
+# END YOUR CODE
 
 class TransformerEncoderLayer(nn.Module):
     """Encoder layer block.
@@ -64,6 +66,7 @@ class TransformerEncoderLayer(nn.Module):
                                 self.quant_noise_block_size,
                                 args)
         self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
+        self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
         # END YOUR CODE
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
@@ -118,8 +121,7 @@ class TransformerEncoderLayer(nn.Module):
     def forward(
         self,
         x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
-        encoder_phrase_padding_mask,
-        encoder_padding_mask: Optional[Tensor],
+        encoder_padding_mask,
         attn_mask: Optional[Tensor] = None,
     ):
         """
@@ -159,7 +161,7 @@ class TransformerEncoderLayer(nn.Module):
         graph_level = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
         graph_level += embed_pos
         graph_level = graph_level.transpose(0, 1)
-        phrase_level = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_node_idx.unsqueeze(-1).repeat(1,1,dim))
+        phrase_level = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_node_idx.unsqueeze(-1).repeat(1,1,dim)).transpose(0, 1)
 
         concept_level = x_graph.reshape(batch,-1,dim)
         concept_level = concept_level.sum(dim=1) / concept_level.size(1)
@@ -168,7 +170,7 @@ class TransformerEncoderLayer(nn.Module):
         residual = graph_level
         if self.normalize_before:
             graph_level = self.graph_level_norm(graph_level)
-        x = self.self_attn(
+        x, _ = self.self_attn(
             query=graph_level,
             key=graph_level,
             value=graph_level,
@@ -184,7 +186,7 @@ class TransformerEncoderLayer(nn.Module):
         residual = x
         if self.normalize_before:
             x = self.graph_level_norm(x)
-        x = self.phrase_attn(
+        x, _ = self.phrase_attn(
             query=x,
             key=phrase_level,
             value=phrase_level)
@@ -203,7 +205,7 @@ class TransformerEncoderLayer(nn.Module):
         if not self.normalize_before:
             x = self.ffn_norm(x)
         # END YOUR CODE
-    return x, x_graph, src_labels
+        return x, x_graph, src_labels
 
 
 class TransformerDecoderLayer(nn.Module):

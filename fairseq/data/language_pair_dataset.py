@@ -288,6 +288,8 @@ class LanguagePairDataset(FairseqDataset):
         src_lang_id=None,
         tgt_lang_id=None,
         pad_to_multiple=1,
+        src_edges = None,
+        src_labels = None
     ):
         if tgt_dict is not None:
             assert src_dict.pad() == tgt_dict.pad()
@@ -367,6 +369,18 @@ class LanguagePairDataset(FairseqDataset):
         self.src_selected_idx = self.get_selected_index()
         self.src_node_idx = self.get_node_index()
         # END YOUR CODE
+    def get_selected_index(self):
+        def selectIndexTensor(idx):
+            select = idx != self.intnode_index
+            position = torch.LongTensor(list(range(idx.size(0))))
+            return position[select]
+        return [selectIndexTensor(src) for src in self.src]
+    def get_node_index(self):
+        def nodeIndexTensor(idx):
+            select = idx == self.intnode_index
+            position = torch.LongTensor(list(range(idx.size(0))))
+            return position[select]
+        return [nodeIndexTensor(src) for src in self.src]
     def get_batch_shapes(self):
         return self.buckets
 
@@ -400,6 +414,10 @@ class LanguagePairDataset(FairseqDataset):
             "id": index,
             "source": src_item,
             "target": tgt_item,
+            "src_edges": self.src_edges[index],
+            "src_labels": self.src_labels[index],
+            "src_selected_idx": self.src_selected_idx[index],
+            "src_node_idx": self.src_node_idx[index]
         }
         if self.align_dataset is not None:
             example["alignment"] = self.align_dataset[index]

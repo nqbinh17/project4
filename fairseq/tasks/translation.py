@@ -11,7 +11,7 @@ import os
 from typing import Optional
 from argparse import Namespace
 from omegaconf import II
-
+import torch
 import numpy as np
 from fairseq import metrics, utils
 from fairseq.data import (
@@ -58,6 +58,7 @@ def load_langpair_dataset(
     shuffle=True,
     pad_to_multiple=1,
     prepend_bos_src=None,
+    graph_path = None
 ):
     def split_exists(split, src, tgt, lang, data_path):
         filename = os.path.join(data_path, "{}.{}-{}.{}".format(split, src, tgt, lang))
@@ -65,7 +66,33 @@ def load_langpair_dataset(
 
     src_datasets = []
     tgt_datasets = []
-
+    # START YOUR CODE
+    # type(src_datasets) = fairseq.data.indexed_dataset.MMapIndexedDataset
+    # type(src_datasets[0]) = torch.Tensor
+    src_edges = []
+    src_labels = []
+    with open(graph_path + ".edge", "r") as f:
+        all_data = f.readlines()
+    for i in range(0, len(all_data), 2):
+        u = all_data[i]
+        v = all_data[i+1]
+        u = [int(n) for n in u.replace('\n', '').split()]
+        v = [int(n) for n in v.replace('\n', '').split()]
+        assert len(u) == len(v)
+        src_edges.append(torch.LongTensor((u, v)))
+    del all_data
+    with open(graph_path + '.label', "r") as f:
+        label_list = f.readlines()
+    for data in label_list:
+        src_labels.append(data.replace('\n','').split())
+    del label_list
+    logger.info(
+            "loaded {} examples from: {}".format(
+                len(src_edges), graph_path+'.edge'))
+    logger.info(
+            "loaded {} examples from: {}".format(
+                len(src_labels), graph_path+'.label'))
+    # END YOUR CODE
     for k in itertools.count():
         split_k = split + (str(k) if k > 0 else "")
 
@@ -167,6 +194,8 @@ def load_langpair_dataset(
         num_buckets=num_buckets,
         shuffle=shuffle,
         pad_to_multiple=pad_to_multiple,
+        src_edges = src_edges,
+        src_labels = src_labels
     )
 
 
@@ -262,6 +291,9 @@ class TranslationConfig(FairseqDataclass):
     eval_bleu_print_samples: bool = field(
         default=False, metadata={"help": "print sample generations during validation"}
     )
+    graph_train_path: Optional[str] = field(default = None)
+    graph_valid_path: Optional[str] = field(default = None)
+    graph_test_path: Optional[str] = field(default = None)
 
 
 @register_task("translation", dataclass=TranslationConfig)
@@ -336,11 +368,11 @@ class TranslationTask(FairseqTask):
         src, tgt = self.cfg.source_lang, self.cfg.target_lang
         # START YOUR CODE
         if split == 'train':
-            graph_path = self.args.graph_train_path
+            graph_path = self.cfg.graph_train_path
         elif split == 'valid':
-            graph_path = self.args.graph_valid_path
+            graph_path = self.cfg.graph_valid_path
         elif split == 'test':
-            graph_path = self.args.graph_test_path
+            graph_path = self.cfg.graph_test_path
             if graph_path == None:
               graph_path = "data_bin/graph_data/IWSLT15.TED.tst2015.en-vi"
         else:
@@ -366,6 +398,7 @@ class TranslationTask(FairseqTask):
             num_buckets=self.cfg.num_batch_buckets,
             shuffle=(split != "test"),
             pad_to_multiple=self.cfg.required_seq_len_multiple,
+            graph_path = graph_path
         )
 
     def build_dataset_for_inference(self, src_tokens, src_lengths, constraints=None):
