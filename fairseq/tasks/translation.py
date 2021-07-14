@@ -79,7 +79,7 @@ def load_langpair_dataset(
         u = [int(n) for n in u.replace('\n', '').split()]
         v = [int(n) for n in v.replace('\n', '').split()]
         assert len(u) == len(v)
-        src_edges.append(torch.LongTensor((u, v)))
+        src_edges.append(torch.LongTensor((v, u)))
     del all_data
     with open(graph_path + '.label', "r") as f:
         label_list = f.readlines()
@@ -92,6 +92,7 @@ def load_langpair_dataset(
     logger.info(
             "loaded {} examples from: {}".format(
                 len(src_labels), graph_path+'.label'))
+    
     # END YOUR CODE
     for k in itertools.count():
         split_k = split + (str(k) if k > 0 else "")

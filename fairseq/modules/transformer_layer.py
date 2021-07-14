@@ -67,10 +67,6 @@ class TransformerEncoderLayer(nn.Module):
                                 args)
         self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
         self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
-        self.gr1 = GatingResidual(self.embed_dim, self.quant_noise, self.quant_noise_block_size, args)
-        self.gr2 = GatingResidual(self.embed_dim, self.quant_noise, self.quant_noise_block_size, args)
-        self.gr3 = GatingResidual(self.embed_dim, self.quant_noise, self.quant_noise_block_size, args)
-        self.gr4 = GatingResidual(self.embed_dim, self.quant_noise, self.quant_noise_block_size, args)
         # END YOUR CODE
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
@@ -159,7 +155,7 @@ class TransformerEncoderLayer(nn.Module):
             x_graph = self.x_graph_norm(x_graph)
         x_graph, src_labels = self.graph_encode(x_graph, src_edges, src_labels)
         x_graph = self.dropout_module(x_graph)
-        x_graph = self.gr1(x_graph, residual)
+        x_graph = self.residual_connection(x_graph, residual)
         if not self.normalize_before:
             x_graph = self.x_graph_norm(x_graph)
         graph_level = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
@@ -182,7 +178,7 @@ class TransformerEncoderLayer(nn.Module):
             attn_mask=attn_mask,
         )
         x = self.dropout_module(x)
-        x = self.gr2(x, residual)
+        x = self.residual_connection(x, residual)
         if not self.normalize_before:
             x = self.phrase_level_norm(x)
         # Cross-attention x & phrase_level => x
@@ -195,7 +191,7 @@ class TransformerEncoderLayer(nn.Module):
             key=phrase_level,
             value=phrase_level)
         x = self.dropout_module(x)
-        x = self.gr3(x, residual)
+        x = self.residual_connection(x, residual)
         if not self.normalize_before:
             x = self.phrase_level_norm(x)
         
@@ -205,7 +201,7 @@ class TransformerEncoderLayer(nn.Module):
             x = self.ffn_norm(x)
         x = self.ffn(x)
         x = self.dropout_module(x)
-        x = self.gr4(x, residual)
+        x = self.residual_connection(x, residual)
         if not self.normalize_before:
             x = self.ffn_norm(x)
         # END YOUR CODE
