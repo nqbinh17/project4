@@ -1,7 +1,7 @@
 import itertools
 
-def Process2LineGraph(text, edge, label):
-  nText = [None for _ in text]
+def Process2LineGraph(size, edge, label):
+  nText = [None for _ in range(size)]
   nEdge = [[], []]
 
   # Process Nodes (text)

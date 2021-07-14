@@ -28,7 +28,7 @@ from fairseq.data import (
 from fairseq.data.indexed_dataset import get_available_dataset_impl
 from fairseq.dataclass import ChoiceEnum, FairseqDataclass
 from fairseq.tasks import FairseqTask, register_task
-
+from fairseq.preprocess_graph.line_graph import Process2LineGraph
 
 EVAL_BLEU_ORDER = 4
 
@@ -66,34 +66,7 @@ def load_langpair_dataset(
 
     src_datasets = []
     tgt_datasets = []
-    # START YOUR CODE
-    # type(src_datasets) = fairseq.data.indexed_dataset.MMapIndexedDataset
-    # type(src_datasets[0]) = torch.Tensor
-    src_edges = []
-    src_labels = []
-    with open(graph_path + ".edge", "r") as f:
-        all_data = f.readlines()
-    for i in range(0, len(all_data), 2):
-        u = all_data[i]
-        v = all_data[i+1]
-        u = [int(n) for n in u.replace('\n', '').split()]
-        v = [int(n) for n in v.replace('\n', '').split()]
-        assert len(u) == len(v)
-        src_edges.append(torch.LongTensor((v, u)))
-    del all_data
-    with open(graph_path + '.label', "r") as f:
-        label_list = f.readlines()
-    for data in label_list:
-        src_labels.append(data.replace('\n','').split())
-    del label_list
-    logger.info(
-            "loaded {} examples from: {}".format(
-                len(src_edges), graph_path+'.edge'))
-    logger.info(
-            "loaded {} examples from: {}".format(
-                len(src_labels), graph_path+'.label'))
     
-    # END YOUR CODE
     for k in itertools.count():
         split_k = split + (str(k) if k > 0 else "")
 
@@ -181,6 +154,40 @@ def load_langpair_dataset(
             )
 
     tgt_dataset_sizes = tgt_dataset.sizes if tgt_dataset is not None else None
+    # START YOUR CODE
+    # type(src_datasets) = fairseq.data.indexed_dataset.MMapIndexedDataset
+    # type(src_datasets[0]) = torch.Tensor
+    src_edges = []
+    src_labels = []
+    with open(graph_path + ".edge", "r") as f:
+        all_data = f.readlines()
+    for i in range(0, len(all_data), 2):
+        u = all_data[i]
+        v = all_data[i+1]
+        u = [int(n) for n in u.replace('\n', '').split()]
+        v = [int(n) for n in v.replace('\n', '').split()]
+        assert len(u) == len(v)
+        src_edges.append(torch.LongTensor((v, u)))
+    del all_data
+    with open(graph_path + '.label', "r") as f:
+        label_list = f.readlines()
+    for data in label_list:
+        src_labels.append(data.replace('\n','').split())
+    del label_list
+    logger.info(
+            "loaded {} examples from: {}".format(
+                len(src_edges), graph_path+'.edge'))
+    logger.info(
+            "loaded {} examples from: {}".format(
+                len(src_labels), graph_path+'.label'))
+    
+    src_line_edges = []
+    src_line_nodes = []
+    for size, edge, label in zip(src_dataset.sizes, src_edges, src_labels):
+        new_text, new_edge = Process2LineGraph(size, edge.tolist(), label)
+        src_line_nodes.append(new_text)
+        src_line_edges.append(torch.LongTensor(new_edge))
+    # END YOUR CODE
     return LanguagePairDataset(
         src_dataset,
         src_dataset.sizes,
@@ -292,9 +299,11 @@ class TranslationConfig(FairseqDataclass):
     eval_bleu_print_samples: bool = field(
         default=False, metadata={"help": "print sample generations during validation"}
     )
+    # START CODE
     graph_train_path: Optional[str] = field(default = None)
     graph_valid_path: Optional[str] = field(default = None)
     graph_test_path: Optional[str] = field(default = None)
+    # END CODE
 
 
 @register_task("translation", dataclass=TranslationConfig)
