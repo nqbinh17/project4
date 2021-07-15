@@ -82,7 +82,7 @@ class TransformerEncoderLayer(nn.Module):
                                 self.embed_dim, 
                                 self.quant_noise, 
                                 self.quant_noise_block_size,
-                                args)"
+                                args)
         # END YOUR CODE
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):

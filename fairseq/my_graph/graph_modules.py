@@ -392,7 +392,7 @@ class UCCAEncoder(nn.Module):
         return residual + x
     def forward(self, x, edge_index, x_label = None):
         if self.layers == 1:
-            if self.isLabeled != None:
+            if self.isLabeled == True:
                 x_label = self.convs_layer_norm(x_label)
                 x_label = self.lin_label(x_label)
                 x_label = self.dropout_module(x_label)

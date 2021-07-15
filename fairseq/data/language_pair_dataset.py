@@ -163,11 +163,12 @@ def collate(
     src_line_nodes = None
     max_len = src_tokens.size(1)
     for s in sort_order:
-        label_max_len = max([len(label) for label in samples[s]['src_line_nodes']])
+        temp = max([len(label) for label in samples[s]['src_line_nodes']])
+        label_max_len = max(label_max_len, temp)
 
     for s in sort_order:
         l = samples[s]["src_line_nodes"] 
-        padded_label = line_ucca(l, label_max_len, max_len)
+        padded_label = line_ucca.Label2Seq(l, label_max_len, max_len)
         if src_line_nodes == None:
             src_line_nodes = padded_label
         else:

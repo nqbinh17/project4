@@ -5,7 +5,7 @@ class UCCALabel:
     self.label_dict = {} # total 13 labels
     self.setupDict()
   def length(self):
-    return len(self.labels)
+    return len(self.label_dict)
   def setupDict(self):
     for label in (self.labels):
       self.pushToDict(label)
@@ -49,6 +49,4 @@ class LineUCCALabel(UCCALabel):
         label_list = [self.getIdx(item, label_len) for item in label]
         while len(label_list) < seq_len:
           label_list = [[self.getPadIndex()] * label_len] + label_list
-        label_list = torch.LongTensor(label_list)
-        assert label_list.shape == (seq_len, label_len)
         return torch.LongTensor(label_list)

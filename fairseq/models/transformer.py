@@ -583,9 +583,10 @@ class TransformerEncoder(FairseqEncoder):
         if self.quant_noise is not None:
             src_line_nodes = self.quant_noise(src_line_nodes)
         src_line_nodes = src_line_nodes.sum(2) # AG, BS, C, D => A+G, B+S, C+pad, D+pad
-        src_line_nodes = src_line_nodes + x.clone() # ... => John+A+G, kicked+B+S, the+C, ball+D
+        
         N, embed_size = x_graph.shape
-        src_line_nodes = src_line_nodes.transpose(N, embed_size)
+        src_line_nodes = src_line_nodes.reshape(N, embed_size)
+        src_line_nodes = src_line_nodes + x_graph.clone() # ... => John+A+G, kicked+B+S, the+C, ball+D
         x_line_graph = src_line_nodes # change name for regulation
         # account for padding while computing the representation
         # B x T x C -> T x B x C
