@@ -8,7 +8,7 @@ import logging
 import numpy as np
 import torch
 from fairseq.data import FairseqDataset, data_utils
-
+from fairseq.my_graph.ucca import UCCALabel, LineUCCALabel 
 
 logger = logging.getLogger(__name__)
 
@@ -125,19 +125,25 @@ def collate(
         return torch.cat([pad, x], dim = 0)
     src_selected_idx = torch.cat([tensorSelectedIndex(data, "src_selected_idx", max_len_select) for data in zip(sort_order, extra_length)],dim=0).reshape(-1, max_len_select)
     src_node_idx = torch.cat([tensorSelectedIndex(data, "src_node_idx", max_len_nodes) for data in zip(sort_order, extra_length)],dim=0).reshape(-1, max_len_nodes)
-    def tensorEdges(data):
+    
+    "1. Process for src_edges"
+    def tensorEdges(data, item):
         i, [order, e] = data
-        edge = samples[order]['src_edges'] + e # move idx to the right, since padding to the left
+        edge = samples[order][item] + e # move idx to the right, since padding to the left
         edge = edge + i * seq_len
         return edge
     src_edges = None
     for data in enumerate(zip(sort_order, extra_length)):
-      r = tensorEdges(data)
+      r = tensorEdges(data, "src_edges")
       if src_edges == None:
         src_edges = r
       else:
         src_edges = torch.cat([src_edges, r], dim = 1) # shape = [2, Edges]
+    
+    
+    "1. Process for src_labels"
     src_labels = None
+    
     for s in sort_order:
         l = samples[s]['src_labels']
         if src_labels == None:
@@ -145,6 +151,43 @@ def collate(
         else:
             src_labels = torch.cat([src_labels, l], dim = 0) # shape = [Labels]
     assert src_edges.size(1) == src_labels.size(0)
+
+    """
+    1. Batch left-padding for src_line_nodes
+    2. Example input: [[AAA, CC, DD], [E, F, G]]
+    3. Example output: tensor([[000, 11pad, 22pad], [3padpad, 4padpad, 5padpad]])
+    4. src_line_nodes == src_tokens, batch + sentence length must equal
+    5. Expected shape: (bz, seq_len, label_len)"""
+    line_ucca = LineUCCALabel()
+    label_max_len = 0
+    src_line_nodes = None
+    max_len = src_tokens.size(1)
+    for s in sort_order:
+        label_max_len = max([len(label) for label in samples[s]['src_line_nodes']])
+
+    for s in sort_order:
+        l = samples[s]["src_line_nodes"] 
+        padded_label = line_ucca(l, label_max_len, max_len)
+        if src_line_nodes == None:
+            src_line_nodes = padded_label
+        else:
+            src_line_nodes = torch.cat([src_line_nodes, padded_label], dim = 0) # shape = [Labels, max_len]
+    batch, sen_len = src_tokens.shape
+    src_line_nodes = src_line_nodes.reshape(batch, sen_len, label_max_len)
+
+    """
+    1. Processing for src_line_edges
+    2. Input shape: [a, b, c, ...] (a, b, c is int)
+    3. Output shape: [2, a+b+c..]
+    """
+    src_line_edges = None
+    for data in enumerate(zip(sort_order, extra_length)):
+      r = tensorEdges(data, "src_line_edges")
+      if src_line_edges == None:
+        src_line_edges = r
+      else:
+        src_line_edges = torch.cat([src_line_edges, r], dim = 1) # shape = [2, Edges]
+
     # END YOUR CODE
     batch = {
         "id": id,
@@ -156,7 +199,9 @@ def collate(
             "src_edges": src_edges,
             "src_labels": src_labels,
             "src_selected_idx": src_selected_idx,
-            "src_node_idx": src_node_idx
+            "src_node_idx": src_node_idx,
+            "src_line_nodes": src_line_nodes,
+            "src_line_edges": src_line_edges
         },
         "target": target,
     }
@@ -203,29 +248,6 @@ def collate(
         batch["constraints"] = constraints.index_select(0, sort_order)
 
     return batch
-# START YOUR CODE
-class UCCALabel:
-  def __init__(self):
-    self.labels = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'L', 'N', 'P', 'R', 'S', 'U']
-    self.label_dict = {} # total 13 labels
-    self.setupDict()
-  def length(self):
-    return len(self.labels)
-  def setupDict(self):
-    for label in (self.labels):
-      self.pushToDict(label)
-  def pushToDict(self, label):
-    if label not in self.label_dict:
-      self.label_dict[label] = len(self.label_dict)
-  def getIdx(self, label):
-    assert label in self.label_dict, label
-    return self.label_dict[label]
-  def Label2Seq(self, label):
-    label_list = []
-    for l in label:
-      label_list.append(torch.LongTensor(list(map(self.getIdx, l))))
-    return label_list
-# END YOUR CODE
 
 class LanguagePairDataset(FairseqDataset):
     """
@@ -289,7 +311,9 @@ class LanguagePairDataset(FairseqDataset):
         tgt_lang_id=None,
         pad_to_multiple=1,
         src_edges = None,
-        src_labels = None
+        src_labels = None,
+        src_line_edges = None,
+        src_line_nodes = None
     ):
         if tgt_dict is not None:
             assert src_dict.pad() == tgt_dict.pad()
@@ -368,7 +392,10 @@ class LanguagePairDataset(FairseqDataset):
         self.intnode_index = self.src_dict.intnode()
         self.src_selected_idx = self.get_selected_index()
         self.src_node_idx = self.get_node_index()
+        self.src_line_nodes = src_line_nodes
+        self.src_line_edges = src_line_edges
         # END YOUR CODE
+    # START CODE
     def get_selected_index(self):
         def selectIndexTensor(idx):
             select = idx != self.intnode_index
@@ -381,6 +408,8 @@ class LanguagePairDataset(FairseqDataset):
             position = torch.LongTensor(list(range(idx.size(0))))
             return position[select]
         return [nodeIndexTensor(src) for src in self.src]
+
+    # END CODE
     def get_batch_shapes(self):
         return self.buckets
 
@@ -417,7 +446,9 @@ class LanguagePairDataset(FairseqDataset):
             "src_edges": self.src_edges[index],
             "src_labels": self.src_labels[index],
             "src_selected_idx": self.src_selected_idx[index],
-            "src_node_idx": self.src_node_idx[index]
+            "src_node_idx": self.src_node_idx[index],
+            "src_line_nodes": self.src_line_nodes[index],
+            "src_line_edges": self.src_line_edges[index]
         }
         if self.align_dataset is not None:
             example["alignment"] = self.align_dataset[index]

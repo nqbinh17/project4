@@ -1,15 +1,12 @@
 import itertools
 
 def Process2LineGraph(size, edge, label):
-  nText = [None for _ in range(size)]
+  nText = ['' for _ in range(size)]
   nEdge = [[], []]
 
   # Process Nodes (text)
   for i, (u, v) in enumerate(zip(*edge)):
-    if nText[v] != None:
-      nText[v] += label[i]
-    else:
-      nText[v] = label[i]
+    nText[v] += label[i]
 
   # Process Edges
   def push2Edge(edges, type):

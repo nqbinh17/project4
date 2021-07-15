@@ -242,7 +242,7 @@ class GAT(MessagePassing):
 
 class GraphTransformer(MessagePassing):
     def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args,
-                 heads: int = 1,**kwargs):
+                 heads: int = 1, isLabeled = True, **kwargs):
         kwargs.setdefault('aggr', 'add')
         super(GraphTransformer, self).__init__(node_dim=0, **kwargs)
 
@@ -261,7 +261,7 @@ class GraphTransformer(MessagePassing):
         self.lin_skip = build_linear(self.in_channels, self.heads * self.out_channels, quant_noise, qn_block_size)
         self.lin_beta = build_linear(3 * self.heads * self.out_channels, self.heads * self.out_channels, quant_noise, qn_block_size)
         self.attention_qk = ScoreCollections(self.heads, self.out_channels, "Transformer")
-    def forward(self, x, edge_index, edge_attr):
+    def forward(self, x, edge_index, edge_attr = None):
         x = (x, x)
         out = self.propagate(edge_index, x=x, edge_attr=edge_attr, size=None)
         out = out.view(-1, self.heads * self.out_channels)
@@ -275,14 +275,16 @@ class GraphTransformer(MessagePassing):
                 size_i=None):
         query = self.lin_query(x_i).view(-1, self.heads, self.out_channels)
         key = self.lin_key(x_j).view(-1, self.heads, self.out_channels)
-        edge_attr = edge_attr.view(-1, self.heads, self.out_channels)
-        key += edge_attr
+        if edge_attr != None:
+            edge_attr = edge_attr.view(-1, self.heads, self.out_channels)
+            key += edge_attr
         # Attention Mechanism
         alpha = self.attention_qk(query * key, index, size_i)
         alpha = self.dropout_module(alpha)
 
         value = self.lin_value(x_j).view(-1, self.heads, self.out_channels)
-        value += edge_attr
+        if edge_attr != None:
+            value += edge_attr
         out = value * alpha.view(-1, self.heads, 1)
         return out
 class EnhancedGraphTransformer(MessagePassing):
@@ -343,7 +345,7 @@ class EnhancedGraphTransformer(MessagePassing):
         return out
 
 class UCCAEncoder(nn.Module):
-    def __init__(self, in_dim, hidden_dim, out_dim, args, layers=1):
+    def __init__(self, in_dim, hidden_dim, out_dim, args, layers=1, isLabeled = True):
         super(UCCAEncoder, self).__init__()
         
         self.in_dim = in_dim
@@ -352,6 +354,8 @@ class UCCAEncoder(nn.Module):
         self.quant_noise = getattr(args, 'quant_noise_pq', 0)
         self.quant_noise_block_size = getattr(args, 'quant_noise_pq_block_size', 8) or 8
         self.num_layers = 3 # hard-code
+        self.isLabeled = isLabeled
+        self.num_heads = 8
         self.dropout_module = FairseqDropout(
             args.dropout, module_name=self.__class__.__name__
         )
@@ -364,8 +368,8 @@ class UCCAEncoder(nn.Module):
             settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args)
         elif graph_type == "GraphTransformer":
             Model = GraphTransformer
-            head_dim = hidden_dim // 8
-            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, 8)
+            head_dim = hidden_dim // self.num_heads
+            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, self.num_heads, self.isLabeled)
         elif graph_type == "EnhancedGraphTransformer":
             Model = EnhancedGraphTransformer
             head_dim = hidden_dim // 8
@@ -381,15 +385,17 @@ class UCCAEncoder(nn.Module):
         else:
             self.convs = Model(*settings)
         self.convs_layer_norm = LayerNorm(self.in_dim)
-        self.lin_label = build_linear(self.in_dim, self.in_dim, self.quant_noise, self.quant_noise_block_size, False)
+        if self.isLabeled != None:
+            self.lin_label = build_linear(self.in_dim, self.in_dim, self.quant_noise, self.quant_noise_block_size, False)
 
     def residual_connection(self, x, residual):
         return residual + x
-    def forward(self, x, edge_index, x_label):
+    def forward(self, x, edge_index, x_label = None):
         if self.layers == 1:
-            x_label = self.convs_layer_norm(x_label)
-            x_label = self.lin_label(x_label)
-            x_label = self.dropout_module(x_label)
+            if self.isLabeled != None:
+                x_label = self.convs_layer_norm(x_label)
+                x_label = self.lin_label(x_label)
+                x_label = self.dropout_module(x_label)
             x = self.convs(x, edge_index, x_label)
         else:
             for convs in self.convs:

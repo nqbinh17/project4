@@ -203,7 +203,9 @@ def load_langpair_dataset(
         shuffle=shuffle,
         pad_to_multiple=pad_to_multiple,
         src_edges = src_edges,
-        src_labels = src_labels
+        src_labels = src_labels,
+        src_line_edges = src_line_edges,
+        src_line_nodes = src_line_nodes
     )
 
 
