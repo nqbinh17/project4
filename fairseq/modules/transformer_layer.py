@@ -132,7 +132,7 @@ class TransformerEncoderLayer(nn.Module):
         self,
         x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
         x_line_graph, src_line_edges,
-        encoder_padding_mask, graph_embedding_mask,
+        encoder_padding_mask,
         attn_mask: Optional[Tensor] = None,
     ):
         """
@@ -194,6 +194,7 @@ class TransformerEncoderLayer(nn.Module):
         if not self.normalize_before:
             x_line_graph = self.x_line_graph_norm(x_line_graph)
         # Step 2
+        residual = x_graph
         if self.normalize_before:
             x_graph = self.x_graph_norm(x_graph)
         x_graph, src_labels = self.graph_encode(x_graph, src_edges, src_labels)
