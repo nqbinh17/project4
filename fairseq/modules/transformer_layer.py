@@ -127,7 +127,7 @@ class TransformerEncoderLayer(nn.Module):
         self,
         x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
         x_line_graph, src_line_edges,
-        encoder_padding_mask,
+        encoder_padding_mask, graph_embedding_mask
         attn_mask: Optional[Tensor] = None,
     ):
         """
@@ -151,7 +151,6 @@ class TransformerEncoderLayer(nn.Module):
         # the attention weight (before softmax) for some padded element in query
         # will become -inf, which results in NaN in model parameters
         if attn_mask is not None:
-            mask_out = attn_mask.copy()
             attn_mask = attn_mask.masked_fill(attn_mask.to(torch.bool), -1e8)
 
         # START YOUR CODE    
@@ -176,8 +175,8 @@ class TransformerEncoderLayer(nn.Module):
         1. Normal Graph + Line Graph Encode Phase
         2. Step 1: Pass through Line Graph Encode => x_line_graph (=> line_graph_level, line_phrase_level)
         3. Step 2: Pass through Graph Encode => x_graph (=> graph_level, phrase_level)
-        4. Step 3: Connect (sum or something else) Line Graph + Normal Graph => x_line_graph + x_graph => graph_level (with mask), phrase_level
-        5. Step 4: Connect (sum or sth else) token_level + graph_level => x + graph_level
+        4. Step 3: Connect (sum or something else) Line Graph + Normal Graph => x_line_graph + x_graph => graph_level, phrase_level
+        5. Step 4: Connect (sum or sth else) token_level + graph_level => x + graph_level (masked out padding in graph_level)
         6. Step 5: Apply Cross-Attn: x, phrase_level => x"""
         # Step 1
         residual = x_line_graph
@@ -189,6 +188,7 @@ class TransformerEncoderLayer(nn.Module):
         x_line_graph = self.residual_connection(x_line_graph, residual)
         if not self.normalize_before:
             x_line_graph = self.x_line_graph_norm(x_line_graph)
+        x_line_graph = x_line_graph.masked_fill(graph_embedding_mask, 0.0)
         # Step 2
         if self.normalize_before:
             x_graph = self.x_graph_norm(x_graph)
@@ -197,6 +197,7 @@ class TransformerEncoderLayer(nn.Module):
         x_graph = self.residual_connection(x_graph, residual)
         if not self.normalize_before:
             x_graph = self.x_graph_norm(x_graph)
+        x_graph = x_graph.masked_fill(graph_embedding_mask, 0.0)
         # Step 3
         x_graph = x_graph + x_line_graph
         graph_level = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
@@ -204,9 +205,6 @@ class TransformerEncoderLayer(nn.Module):
         graph_level = graph_level.transpose(0, 1)
         phrase_level = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_node_idx.unsqueeze(-1).repeat(1,1,dim)).transpose(0, 1)
         # Step 4
-        if 
-        if attn_mask is not None:
-            graph_level = graph_level.masked_fill(mask_out == 0, 0.0)
         x = self.token_graph_residual(x, graph_level)
         x = self.token_graph_norm(x)
         # Step 5
@@ -216,7 +214,7 @@ class TransformerEncoderLayer(nn.Module):
         x, _ = self.phrase_attn(
             query=x,
             key=phrase_level,
-            value=phrase_level, key_padding_mask=encoder_padding_mask)
+            value=phrase_level)
         x = self.dropout_module(x)
         x = self.residual_connection(x, residual)
         if not self.normalize_before:
