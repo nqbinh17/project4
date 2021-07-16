@@ -562,9 +562,10 @@ class TransformerEncoder(FairseqEncoder):
                   Only populated if *return_all_hiddens* is True.
         """
         # compute padding mask
-        has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
+        
         "1. Produce graph_embedding_mask, since there are many padding key"
-        graph_embedding_mask = src_tokens.eq(self.padding_idx).unsqueeze(-1)
+        graph_embedding_mask = src_tokens.eq(self.padding_idx).reshape(-1).unsqueeze(-1)
+        has_pads = src_tokens.device.type == "xla" or graph_embedding_mask.any()
 
         x, encoder_embedding, x_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
         "src_labels idx => src_labels embedding"

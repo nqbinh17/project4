@@ -127,7 +127,7 @@ class TransformerEncoderLayer(nn.Module):
         self,
         x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
         x_line_graph, src_line_edges,
-        encoder_padding_mask, graph_embedding_mask
+        encoder_padding_mask, graph_embedding_mask,
         attn_mask: Optional[Tensor] = None,
     ):
         """
