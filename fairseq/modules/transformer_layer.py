@@ -36,10 +36,8 @@ class TransformerEncoderLayer(nn.Module):
         self.args = args
         self.embed_dim = args.encoder_embed_dim
         self.quant_noise = getattr(args, "quant_noise_pq", 0)
-        self.quant_noise_block_size = getattr(args, "quant_noise_pq_block_size", 8) or 8
-        self.self_attn = self.build_self_attention(self.embed_dim, args)
+        self.quant_noise_block_size = getattr(args, "quant_noise_pq_block_size", 8) or 8        
         export = getattr(args, "export", False)
-        self.self_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
         self.dropout_module = FairseqDropout(
             args.dropout, module_name=self.__class__.__name__
         )
@@ -55,34 +53,25 @@ class TransformerEncoderLayer(nn.Module):
         )
         self.normalize_before = args.encoder_normalize_before
         # START YOUR CODE
-        "Initiate Graph Modules"
+        "Initiate 6 LayerNorm"
+        self.self_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
         self.x_graph_norm = LayerNorm(self.embed_dim)
-        self.graph_level_norm = LayerNorm(self.embed_dim)
         self.phrase_level_norm = LayerNorm(self.embed_dim)
-        
-        self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
-        self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
-        """
-        1. Initiate Line Graph Modules
-        2. 1 self-attention, 1 cross-attention over phrase-level
-        3. 1 UCCAEncoder
-        4. 4 layer_norm"""
         self.x_line_graph_norm = LayerNorm(self.embed_dim)
-        self.line_graph_level_norm = LayerNorm(self.embed_dim)
-        self.line_phrase_level_norm = LayerNorm(self.embed_dim)
-
-        self.line_phrase_attn = self.build_phrase_attention(self.embed_dim, args)
-        self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = False)
-        self.line_self_attn = self.build_self_attention(self.embed_dim, args)
-        self.line_self_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
-        "Initiate Last Feedforward"
+        self.token_graph_norm = LayerNorm(self.embed_dim)
         self.ffn_norm = LayerNorm(self.embed_dim)
-        self.ffn = FeedForward(self.embed_dim, 
-                                2048, 
-                                self.embed_dim, 
-                                self.quant_noise, 
-                                self.quant_noise_block_size,
-                                args)
+        "Initiate 2 Graph Modules"
+        self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
+        self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = False)
+        "Initiate 2 Attention Layer"
+        self.self_attn = self.build_self_attention(self.embed_dim, args)
+        self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
+        "Initiate Gating Residual"
+        self.token_graph_residual = GatingResidual(self.embed_dim, self.quant_noise,
+            self.quant_noise_block_size, args)
+        "Initiate 1 Feedforward"
+        self.ffn = FeedForward(self.embed_dim, 2048, self.embed_dim, 
+                                self.quant_noise, self.quant_noise_block_size, args)
         # END YOUR CODE
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
@@ -162,62 +151,35 @@ class TransformerEncoderLayer(nn.Module):
         # the attention weight (before softmax) for some padded element in query
         # will become -inf, which results in NaN in model parameters
         if attn_mask is not None:
+            mask_out = attn_mask.copy()
             attn_mask = attn_mask.masked_fill(attn_mask.to(torch.bool), -1e8)
 
-        # START YOUR CODE
-        # Pass to Graph Encode => graph_level, phrase_level, concept_level
-        residual = x_graph
-        batch, dim = x.size(1), x.size(2)
+        # START YOUR CODE    
+        """
+        1. Apply Self-attention over token_level => x"""
+        residual = x
         if self.normalize_before:
-            x_graph = self.x_graph_norm(x_graph)
-        x_graph, src_labels = self.graph_encode(x_graph, src_edges, src_labels)
-        x_graph = self.dropout_module(x_graph)
-        x_graph = self.residual_connection(x_graph, residual)
-        if not self.normalize_before:
-            x_graph = self.x_graph_norm(x_graph)
-        graph_level = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
-        graph_level += embed_pos
-        graph_level = graph_level.transpose(0, 1)
-        phrase_level = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_node_idx.unsqueeze(-1).repeat(1,1,dim)).transpose(0, 1)
-
-        #concept_level = x_graph.reshape(batch,-1,dim)
-        #concept_level = concept_level.sum(dim=1) / concept_level.size(1)
-
-        # Self_attention for graph_level => enhanced graph_level
-        residual = graph_level
-        if self.normalize_before:
-            graph_level = self.graph_level_norm(graph_level)
-        graph_level, _ = self.self_attn(
-            query=graph_level,
-            key=graph_level,
-            value=graph_level,
+            x = self.self_attn_layer_norm(x)
+        x, _ = self.self_attn(
+            query=x,
+            key=x,
+            value=x,
             key_padding_mask=encoder_padding_mask,
             attn_mask=attn_mask,
         )
-        graph_level = self.dropout_module(graph_level)
-        graph_level = self.residual_connection(graph_level, residual)
+        x = self.dropout_module(x)
+        x = self.residual_connection(x, residual)
         if not self.normalize_before:
-            graph_level = self.phrase_level_norm(graph_level)
+            x = self.self_attn_layer_norm(x)
 
-        # Cross-attention graph_level & phrase_level => enhanced graph_level
-        residual = graph_level
-        if self.normalize_before:
-            graph_level = self.graph_level_norm(graph_level)
-        graph_level, _ = self.phrase_attn(
-            query=graph_level,
-            key=phrase_level,
-            value=phrase_level)
-        graph_level = self.dropout_module(graph_level)
-        graph_level = self.residual_connection(graph_level, residual)
-        if not self.normalize_before:
-            graph_level = self.phrase_level_norm(graph_level)
-        
         """
-        1. Line Graph Encode Phase
-        2. Step 1: Pass through Line Graph Encode => x_line_graph => line_graph_level, line_phrase_level
-        3. Step 2: Apply Self-Attn
-        4. Step 3: Apply Cross-Attn"""
-        # Step 1: 
+        1. Normal Graph + Line Graph Encode Phase
+        2. Step 1: Pass through Line Graph Encode => x_line_graph (=> line_graph_level, line_phrase_level)
+        3. Step 2: Pass through Graph Encode => x_graph (=> graph_level, phrase_level)
+        4. Step 3: Connect (sum or something else) Line Graph + Normal Graph => x_line_graph + x_graph => graph_level (with mask), phrase_level
+        5. Step 4: Connect (sum or sth else) token_level + graph_level => x + graph_level
+        6. Step 5: Apply Cross-Attn: x, phrase_level => x"""
+        # Step 1
         residual = x_line_graph
         batch, dim = x.size(1), x.size(2)
         if self.normalize_before:
@@ -227,45 +189,40 @@ class TransformerEncoderLayer(nn.Module):
         x_line_graph = self.residual_connection(x_line_graph, residual)
         if not self.normalize_before:
             x_line_graph = self.x_line_graph_norm(x_line_graph)
-        line_graph_level = torch.gather(x_line_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
-        line_graph_level += embed_pos
-        line_graph_level = line_graph_level.transpose(0, 1)
-        line_phrase_level = torch.gather(x_line_graph.reshape(batch,-1,dim), 1, src_node_idx.unsqueeze(-1).repeat(1,1,dim)).transpose(0, 1)
-        # Step 2: Self_attention for line_graph_level => enhanced line_graph_level
-        residual = line_graph_level
+        # Step 2
         if self.normalize_before:
-            line_graph_level = self.line_graph_level_norm(line_graph_level)
-        line_graph_level, _ = self.line_self_attn(
-            query=line_graph_level,
-            key=line_graph_level,
-            value=line_graph_level,
-            key_padding_mask=encoder_padding_mask,
-            attn_mask=attn_mask,
-        )
-        line_graph_level = self.dropout_module(line_graph_level)
-        line_graph_level = self.residual_connection(line_graph_level, residual)
+            x_graph = self.x_graph_norm(x_graph)
+        x_graph, src_labels = self.graph_encode(x_graph, src_edges, src_labels)
+        x_graph = self.dropout_module(x_graph)
+        x_graph = self.residual_connection(x_graph, residual)
         if not self.normalize_before:
-            line_graph_level = self.line_phrase_level_norm(line_graph_level)
-
-        # Step 3: Cross-attention line_graph_level & line_phrase_level => enhanced line_graph_level
-        residual = line_graph_level
+            x_graph = self.x_graph_norm(x_graph)
+        # Step 3
+        x_graph = x_graph + x_line_graph
+        graph_level = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
+        graph_level += embed_pos
+        graph_level = graph_level.transpose(0, 1)
+        phrase_level = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_node_idx.unsqueeze(-1).repeat(1,1,dim)).transpose(0, 1)
+        # Step 4
+        if 
+        if attn_mask is not None:
+            graph_level = graph_level.masked_fill(mask_out == 0, 0.0)
+        x = self.token_graph_residual(x, graph_level)
+        x = self.token_graph_norm(x)
+        # Step 5
+        residual = x
         if self.normalize_before:
-            line_graph_level = self.line_graph_level_norm(line_graph_level)
-        line_graph_level, _ = self.line_phrase_attn(
-            query=line_graph_level,
-            key=line_phrase_level,
-            value=line_phrase_level)
-        line_graph_level = self.dropout_module(line_graph_level)
-        line_graph_level = self.residual_connection(line_graph_level, residual)
+            x = self.phrase_level_norm(x)
+        x, _ = self.phrase_attn(
+            query=x,
+            key=phrase_level,
+            value=phrase_level, key_padding_mask=encoder_padding_mask)
+        x = self.dropout_module(x)
+        x = self.residual_connection(x, residual)
         if not self.normalize_before:
-            line_graph_level = self.line_phrase_level_norm(line_graph_level)
+            x = self.phrase_level_norm(x)
 
-        """
-        1. Blended graph_level & line_graph_level => x
-        2. Still experimenting the blending method"""
-        x = line_graph_level + graph_level
-
-        # Last FFN x => x
+        " Last FFN x => x"
         residual = x
         if self.normalize_before:
             x = self.ffn_norm(x)
