@@ -60,6 +60,7 @@ class TransformerEncoderLayer(nn.Module):
         self.x_line_graph_norm = LayerNorm(self.embed_dim)
         self.token_graph_norm = LayerNorm(self.embed_dim)
         self.ffn_norm = LayerNorm(self.embed_dim)
+        self.gated_residual_norm = LayerNorm(self.embed_dim)
         "Initiate 2 Graph Modules"
         self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
         self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = False)
@@ -69,9 +70,13 @@ class TransformerEncoderLayer(nn.Module):
         "Initiate Gating Residual"
         self.token_graph_residual = GatingResidual(self.embed_dim, self.quant_noise,
             self.quant_noise_block_size, args)
+        self.gated_residual = GatingResidual(self.embed_dim, self.quant_noise,
+            self.quant_noise_block_size, args)
         "Initiate 1 Feedforward"
         self.ffn = FeedForward(self.embed_dim, 2048, self.embed_dim, 
                                 self.quant_noise, self.quant_noise_block_size, args)
+        self.combining_ffn = FeedForward(self.embed_dim*2, 2048, self.embed_dim, 
+                                        self.quant_noise, self.quant_noise_block_size, args)
         # END YOUR CODE
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
@@ -188,7 +193,6 @@ class TransformerEncoderLayer(nn.Module):
         x_line_graph = self.residual_connection(x_line_graph, residual)
         if not self.normalize_before:
             x_line_graph = self.x_line_graph_norm(x_line_graph)
-        x_line_graph = x_line_graph.masked_fill(graph_embedding_mask, 0.0)
         # Step 2
         if self.normalize_before:
             x_graph = self.x_graph_norm(x_graph)
@@ -197,7 +201,6 @@ class TransformerEncoderLayer(nn.Module):
         x_graph = self.residual_connection(x_graph, residual)
         if not self.normalize_before:
             x_graph = self.x_graph_norm(x_graph)
-        x_graph = x_graph.masked_fill(graph_embedding_mask, 0.0)
         # Step 3
         x_graph = x_graph + x_line_graph
         graph_level = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
@@ -211,14 +214,19 @@ class TransformerEncoderLayer(nn.Module):
         residual = x
         if self.normalize_before:
             x = self.phrase_level_norm(x)
-        x, _ = self.phrase_attn(
+        x_out, _ = self.phrase_attn(
             query=x,
             key=phrase_level,
             value=phrase_level)
-        x = self.dropout_module(x)
-        x = self.residual_connection(x, residual)
+        x_out = self.dropout_module(x_out)
+        #x_out = self.residual_connection(x_out, residual)
         if not self.normalize_before:
-            x = self.phrase_level_norm(x)
+            x_out = self.phrase_level_norm(x_out)
+        # Step 6
+        x = self.combining_ffn(torch.cat((x, x_out), dim=-1))
+        x = self.dropout_module(x)
+        x = self.gated_residual(x, residual)
+        x = self.gated_residual_norm(x)
 
         " Last FFN x => x"
         residual = x

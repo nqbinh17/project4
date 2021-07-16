@@ -563,9 +563,8 @@ class TransformerEncoder(FairseqEncoder):
         """
         # compute padding mask
         
-        "1. Produce graph_embedding_mask, since there are many padding key"
-        graph_embedding_mask = src_tokens.eq(self.padding_idx).reshape(-1).unsqueeze(-1)
-        has_pads = src_tokens.device.type == "xla" or graph_embedding_mask.any()
+        encoder_padding_mask = src_tokens.eq(self.padding_idx)
+        has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
         x, encoder_embedding, x_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
         "src_labels idx => src_labels embedding"
@@ -602,7 +601,7 @@ class TransformerEncoder(FairseqEncoder):
         # encoder layers
         for layer in self.layers:
             x, x_graph, src_labels, x_line_graph = layer(x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
-            x_line_graph, src_line_edges, encoder_padding_mask, graph_embedding_mask)
+            x_line_graph, src_line_edges, encoder_padding_mask)
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)
