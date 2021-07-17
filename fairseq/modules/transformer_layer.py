@@ -184,6 +184,7 @@ class TransformerEncoderLayer(nn.Module):
         5. Step 4: Connect (sum or sth else) token_level + graph_level => x + graph_level (masked out padding in graph_level)
         6. Step 5: Apply Cross-Attn: x, phrase_level => x"""
         # Step 1
+        """
         residual = x_line_graph
         batch, dim = x.size(1), x.size(2)
         if self.normalize_before:
@@ -193,6 +194,7 @@ class TransformerEncoderLayer(nn.Module):
         x_line_graph = self.residual_connection(x_line_graph, residual)
         if not self.normalize_before:
             x_line_graph = self.x_line_graph_norm(x_line_graph)
+        """
         # Step 2
         residual = x_graph
         if self.normalize_before:
@@ -203,7 +205,7 @@ class TransformerEncoderLayer(nn.Module):
         if not self.normalize_before:
             x_graph = self.x_graph_norm(x_graph)
         # Step 3
-        x_graph = x_graph + x_line_graph
+        #x_graph = x_graph + x_line_graph
         graph_level = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
         graph_level += embed_pos
         graph_level = graph_level.transpose(0, 1)
