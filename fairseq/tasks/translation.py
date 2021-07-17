@@ -167,7 +167,7 @@ def load_langpair_dataset(
         u = [int(n) for n in u.replace('\n', '').split()]
         v = [int(n) for n in v.replace('\n', '').split()]
         assert len(u) == len(v)
-        src_edges.append(torch.LongTensor((v, u)))
+        src_edges.append(torch.LongTensor((u, v))) # TODO:
     del all_data
     with open(graph_path + '.label', "r") as f:
         label_list = f.readlines()
@@ -184,7 +184,7 @@ def load_langpair_dataset(
     src_line_edges = []
     src_line_nodes = []
     for size, edge, label in zip(src_dataset.sizes, src_edges, src_labels):
-        new_text, new_edge = Process2LineGraph(size, edge.tolist(), label)
+        new_text, new_edge = Process2LineGraph(size, [edge[1].tolist(), edge[0].tolist()], label) #TODO:
         src_line_nodes.append(new_text)
         src_line_edges.append(torch.LongTensor(new_edge))
     # END YOUR CODE
