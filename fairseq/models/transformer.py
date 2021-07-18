@@ -579,7 +579,7 @@ class TransformerEncoder(FairseqEncoder):
         2. Example: nodes = John kicked the ball; labels = AG BS C D
         3. Expected output: John_AG, kicked_BS, the_C, ball_D (sum of embedding values)
         4. Thus src_line_nodes + x (shape: bz, seq_len, embed)"""
-        """
+        #"""
         src_line_nodes = self.label_embedding(src_line_nodes) # (batch, seq_len, label_max_len, embed)
         src_line_nodes = self.dropout_module(self.embed_scale * src_line_nodes)
         if self.quant_noise is not None:
@@ -590,8 +590,7 @@ class TransformerEncoder(FairseqEncoder):
         src_line_nodes = src_line_nodes.reshape(N, embed_size)
         src_line_nodes = src_line_nodes + x_graph.clone() # ... => John+A+G, kicked+B+S, the+C, ball+D
         x_line_graph = src_line_nodes # change name for regulation
-        """
-        x_line_graph = None
+        #"""
         
         # account for padding while computing the representation
         # B x T x C -> T x B x C
