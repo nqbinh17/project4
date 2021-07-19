@@ -454,9 +454,8 @@ class TransformerEncoder(FairseqEncoder):
         # embed tokens and positions
         if token_embedding is None:
             x_graph = self.embed_tokens(src_tokens)
-            #batch, seql, dim = token_embedding.shape
+            batch, seql, dim = x_graph.shape
             src_tokens = torch.gather(src_tokens, 1, src_selected_idx)
-            #x = torch.gather(token_embedding, 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
             x = self.embed_tokens(src_tokens)
         x = embed = self.embed_scale * x
         x_graph = self.embed_scale * x_graph
@@ -591,7 +590,7 @@ class TransformerEncoder(FairseqEncoder):
         src_line_nodes = src_line_nodes + x_graph.clone() # ... => John+A+G, kicked+B+S, the+C, ball+D
         x_line_graph = src_line_nodes # change name for regulation
         """
-        x_line_graph = x_graph
+        x_line_graph = x_graph.clone()
         
         # account for padding while computing the representation
         # B x T x C -> T x B x C

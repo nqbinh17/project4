@@ -62,7 +62,7 @@ class TransformerEncoderLayer(nn.Module):
         self.ffn_norm = LayerNorm(self.embed_dim)
         self.gated_residual_norm = LayerNorm(self.embed_dim)
         "Initiate 2 Graph Modules"
-        #self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
+        self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
         self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = False)
         "Initiate 2 Attention Layer"
         self.self_attn = self.build_self_attention(self.embed_dim, args)
@@ -196,7 +196,7 @@ class TransformerEncoderLayer(nn.Module):
             x_line_graph = self.x_line_graph_norm(x_line_graph)
         
         # Step 2
-        """
+        
         residual = x_graph
         batch, dim = x.size(1), x.size(2)
         if self.normalize_before:
@@ -206,9 +206,9 @@ class TransformerEncoderLayer(nn.Module):
         x_graph = self.residual_connection(x_graph, residual)
         if not self.normalize_before:
             x_graph = self.x_graph_norm(x_graph)
-        """
+        
         # Step 3
-        #x_graph = x_graph + x_line_graph
+        x_graph = x_graph + x_line_graph
         graph_level = torch.gather(x_line_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
         graph_level += embed_pos
         graph_level = graph_level.transpose(0, 1)
