@@ -453,11 +453,11 @@ class TransformerEncoder(FairseqEncoder):
     ):
         # embed tokens and positions
         if token_embedding is None:
-            token_embedding = self.embed_tokens(src_tokens)
-            batch, seql, dim = token_embedding.shape
+            x_graph = self.embed_tokens(src_tokens)
+            #batch, seql, dim = token_embedding.shape
             src_tokens = torch.gather(src_tokens, 1, src_selected_idx)
-            x = torch.gather(token_embedding, 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
-            x_graph = token_embedding
+            #x = torch.gather(token_embedding, 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
+            x = self.embed_tokens(src_tokens)
         x = embed = self.embed_scale * x
         x_graph = self.embed_scale * x_graph
         if self.embed_positions is not None:

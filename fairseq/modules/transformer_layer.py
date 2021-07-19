@@ -62,7 +62,7 @@ class TransformerEncoderLayer(nn.Module):
         self.ffn_norm = LayerNorm(self.embed_dim)
         self.gated_residual_norm = LayerNorm(self.embed_dim)
         "Initiate 2 Graph Modules"
-        self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
+        #self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
         self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = False)
         "Initiate 2 Attention Layer"
         self.self_attn = self.build_self_attention(self.embed_dim, args)
