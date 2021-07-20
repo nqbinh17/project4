@@ -56,27 +56,17 @@ class TransformerEncoderLayer(nn.Module):
         "Initiate 6 LayerNorm"
         self.self_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
         self.x_graph_norm = LayerNorm(self.embed_dim)
-        self.phrase_level_norm = LayerNorm(self.embed_dim)
         self.x_line_graph_norm = LayerNorm(self.embed_dim)
-        self.token_graph_norm = LayerNorm(self.embed_dim)
         self.ffn_norm = LayerNorm(self.embed_dim)
-        self.gated_residual_norm = LayerNorm(self.embed_dim)
         "Initiate 2 Graph Modules"
         self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
         self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = False)
         "Initiate 2 Attention Layer"
         self.self_attn = self.build_self_attention(self.embed_dim, args)
-        self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
-        "Initiate Gating Residual"
-        self.token_graph_residual = GatingResidual(self.embed_dim, self.quant_noise,
-            self.quant_noise_block_size, args)
-        self.gated_residual = GatingResidual(self.embed_dim, self.quant_noise,
-            self.quant_noise_block_size, args)
+
         "Initiate 1 Feedforward"
         self.ffn = FeedForward(self.embed_dim, 2048, self.embed_dim, 
                                 self.quant_noise, self.quant_noise_block_size, args)
-        self.combining_ffn = FeedForward(self.embed_dim*2, 2048, self.embed_dim, 
-                                        self.quant_noise, self.quant_noise_block_size, args)
         # END YOUR CODE
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
@@ -160,22 +150,11 @@ class TransformerEncoderLayer(nn.Module):
 
         # START YOUR CODE    
         """
-        1. Apply Self-attention over token_level => x"""
-        residual = x
-        if self.normalize_before:
-            x = self.self_attn_layer_norm(x)
-        x, _ = self.self_attn(
-            query=x,
-            key=x,
-            value=x,
-            key_padding_mask=encoder_padding_mask,
-            attn_mask=attn_mask,
-        )
-        x = self.dropout_module(x)
-        x = self.residual_connection(x, residual)
-        if not self.normalize_before:
-            x = self.self_attn_layer_norm(x)
-
+        1. Model 89: No phrase-attn, no token-level. Graph encode => self-attn => ffn
+        2. #89 para = 107.6M
+        3. validate (2015 - 26.96, 2013 - 28.62)
+        4. 1.78 6.32 11.70 16.55 19.51 21.08 22.66 22.42 23.78 24.05 skip20 25.86 25.41 26.04 26.19 25.84
+        """
         """
         1. Normal Graph + Line Graph Encode Phase
         2. Step 1: Pass through Line Graph Encode => x_line_graph (=> line_graph_level, line_phrase_level)
@@ -214,25 +193,21 @@ class TransformerEncoderLayer(nn.Module):
         graph_level = graph_level.transpose(0, 1)
         phrase_level = torch.gather(x_line_graph.reshape(batch,-1,dim), 1, src_node_idx.unsqueeze(-1).repeat(1,1,dim)).transpose(0, 1)
         # Step 4
-        x = self.token_graph_residual(x, graph_level)
-        x = self.token_graph_norm(x)
-        # Step 5
+        x = x_graph
         residual = x
         if self.normalize_before:
-            x = self.phrase_level_norm(x)
-        x_out, _ = self.phrase_attn(
+            x = self.self_attn_layer_norm(x)
+        x, _ = self.self_attn(
             query=x,
-            key=phrase_level,
-            value=phrase_level)
-        x_out = self.dropout_module(x_out)
-        #x_out = self.residual_connection(x_out, residual)
-        if not self.normalize_before:
-            x_out = self.phrase_level_norm(x_out)
-        # Step 6
-        x = self.combining_ffn(torch.cat((x, x_out), dim=-1))
+            key=x,
+            value=x,
+            key_padding_mask=encoder_padding_mask,
+            attn_mask=attn_mask,
+        )
         x = self.dropout_module(x)
-        x = self.gated_residual(x, residual)
-        x = self.gated_residual_norm(x)
+        x = self.residual_connection(x, residual)
+        if not self.normalize_before:
+            x = self.self_attn_layer_norm(x)
 
         " Last FFN x => x"
         residual = x
