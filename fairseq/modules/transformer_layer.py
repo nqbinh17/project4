@@ -152,8 +152,11 @@ class TransformerEncoderLayer(nn.Module):
         """
         1. Model 89: No phrase-attn, no token-level. Graph encode => self-attn => ffn
         2. #89 para = 107.6M
-        3. validate (2015 - 26.96, 2013 - 28.62)
+        3. test (2015 - 26.96, 2013 - 28.62) with --amp
         4. 1.78 6.32 11.70 16.55 19.51 21.08 22.66 22.42 23.78 24.05 skip20 25.86 25.41 26.04 26.19 25.84
+        5. test (2015 - 27.29, 2013 - 28.91) no --amp
+        6. 1.73 5.84 11.54 16.47 19.19 21.01 21.87 23.01 23.82 24.07 24.53 25.14 25.63 25.27 24.91 25.33 25.24 25.05 26.00 25.56
+
         """
         """
         1. Normal Graph + Line Graph Encode Phase
@@ -193,7 +196,7 @@ class TransformerEncoderLayer(nn.Module):
         graph_level = graph_level.transpose(0, 1)
         phrase_level = torch.gather(x_line_graph.reshape(batch,-1,dim), 1, src_node_idx.unsqueeze(-1).repeat(1,1,dim)).transpose(0, 1)
         # Step 4
-        x = x_graph
+        x = graph_level
         residual = x
         if self.normalize_before:
             x = self.self_attn_layer_norm(x)
