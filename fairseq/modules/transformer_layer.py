@@ -193,8 +193,10 @@ class TransformerEncoderLayer(nn.Module):
         # Step 4
         x = graph_level
         residual = x
+        
         if self.normalize_before:
             x = self.self_attn_layer_norm(x)
+        """
         x, _ = self.self_attn(
             query=x,
             key=x,
@@ -202,6 +204,8 @@ class TransformerEncoderLayer(nn.Module):
             key_padding_mask=encoder_padding_mask,
             attn_mask=attn_mask,
         )
+        """
+        x = torch.fft.fft2(x, dim=(-1,-2)).real
         x = self.dropout_module(x)
         x = self.residual_connection(x, residual)
         if not self.normalize_before:

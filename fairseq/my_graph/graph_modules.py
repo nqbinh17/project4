@@ -163,7 +163,7 @@ class GraphSage(MessagePassing):
         if normalize:
             self.normalize = True
     def forward(self, x, edge_index, x_label):
-        num_nodes = x.size(0)
+        num_nodes = x.size(0) # (2, num_of_node)
         x = (x, x)
         out = self.propagate(edge_index, x=x, edge_attr=x_label)
         out = self.agg_lin(out)
