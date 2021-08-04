@@ -66,7 +66,7 @@ class TransformerEncoderLayer(nn.Module):
 
         "Initiate 1 Feedforward"
         self.ffn = FeedForward(self.embed_dim, 2048, self.embed_dim, 
-                                self.quant_noise, self.quant_noise_block_size, args, activation="fft")
+                                self.quant_noise, self.quant_noise_block_size, args, activation="log_exp")
         # END YOUR CODE
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):

@@ -552,6 +552,8 @@ def get_activation_fn(activation: str) -> Callable:
     # START CODE
     elif activation == "fft":
         return lambda x: torch.fft.fft2(x, dim=(-1,-2)).real
+    elif activation == "log_exp":
+        return lambda x: torch.log(1 + torch.exp(x))
     # END CODE
     else:
         raise RuntimeError("--activation-fn {} not supported".format(activation))
