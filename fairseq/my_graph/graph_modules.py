@@ -26,11 +26,11 @@ def build_linear(input_dim, output_dim, q_noise, qn_block_size, bias=True):
     init_weights(linear)
     return linear
 class FeedForward(nn.Module):
-    def __init__(self, in_dim, hidden_dim, out_dim, quant_noise, qn_block_size, args):
+    def __init__(self, in_dim, hidden_dim, out_dim, quant_noise, qn_block_size, args, activation=None):
         super().__init__()
         self.fc1 = build_linear(in_dim, hidden_dim, quant_noise, qn_block_size)
         self.fc2 = build_linear(hidden_dim, out_dim, quant_noise, qn_block_size)
-        self.phrase_activation_fn = utils.get_activation_fn(
+        self.activation_fn = utils.get_activation_fn(
             activation=getattr(args, 'activation_fn', 'relu') or "relu"
         ) #torch.sigmoid
         activation_dropout_p = getattr(args, "activation_dropout", 0) or 0
@@ -40,8 +40,10 @@ class FeedForward(nn.Module):
         self.activation_dropout_module = FairseqDropout(
             float(activation_dropout_p), module_name=self.__class__.__name__
         )
+        if activation != None:
+            self.activation_fn = utils.get_activation_fn(activation=activation)
     def forward(self, x):
-        x = self.phrase_activation_fn(self.fc1(x))
+        x = self.activation_fn(self.fc1(x))
         x = self.activation_dropout_module(x)
         x = self.fc2(x)
         return x

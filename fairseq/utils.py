@@ -549,6 +549,10 @@ def get_activation_fn(activation: str) -> Callable:
         return torch.tanh
     elif activation == "linear":
         return lambda x: x
+    # START CODE
+    elif activation == "fft":
+        return lambda x: torch.fft.fft2(x, dim=(-1,-2)).real
+    # END CODE
     else:
         raise RuntimeError("--activation-fn {} not supported".format(activation))
 

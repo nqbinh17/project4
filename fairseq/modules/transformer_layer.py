@@ -66,7 +66,7 @@ class TransformerEncoderLayer(nn.Module):
 
         "Initiate 1 Feedforward"
         self.ffn = FeedForward(self.embed_dim, 2048, self.embed_dim, 
-                                self.quant_noise, self.quant_noise_block_size, args)
+                                self.quant_noise, self.quant_noise_block_size, args, activation="fft")
         # END YOUR CODE
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
@@ -196,7 +196,6 @@ class TransformerEncoderLayer(nn.Module):
         
         if self.normalize_before:
             x = self.self_attn_layer_norm(x)
-        """
         x, _ = self.self_attn(
             query=x,
             key=x,
@@ -204,8 +203,7 @@ class TransformerEncoderLayer(nn.Module):
             key_padding_mask=encoder_padding_mask,
             attn_mask=attn_mask,
         )
-        """
-        x = torch.fft.fft2(x, dim=(-1,-2)).real
+        
         x = self.dropout_module(x)
         x = self.residual_connection(x, residual)
         if not self.normalize_before:
