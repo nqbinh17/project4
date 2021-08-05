@@ -54,15 +54,15 @@ class TransformerEncoderLayer(nn.Module):
         self.normalize_before = args.encoder_normalize_before
         # START YOUR CODE
         "Initiate 6 LayerNorm"
-        self.self_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
-        self.x_graph_norm = LayerNorm(self.embed_dim)
+        #self.self_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
+        #self.x_graph_norm = LayerNorm(self.embed_dim)
         self.x_line_graph_norm = LayerNorm(self.embed_dim)
         self.ffn_norm = LayerNorm(self.embed_dim)
         "Initiate 2 Graph Modules"
         #self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
         self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = False)
         "Initiate 2 Attention Layer"
-        self.self_attn = self.build_self_attention(self.embed_dim, args)
+        #self.self_attn = self.build_self_attention(self.embed_dim, args)
 
         "Initiate 1 Feedforward"
         self.ffn = FeedForward(self.embed_dim, 2048, self.embed_dim, 
@@ -189,11 +189,11 @@ class TransformerEncoderLayer(nn.Module):
         graph_level = torch.gather(graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
         graph_level += embed_pos
         graph_level = graph_level.transpose(0, 1)
-        phrase_level = torch.gather(graph.reshape(batch,-1,dim), 1, src_node_idx.unsqueeze(-1).repeat(1,1,dim)).transpose(0, 1)
+        #phrase_level = torch.gather(graph.reshape(batch,-1,dim), 1, src_node_idx.unsqueeze(-1).repeat(1,1,dim)).transpose(0, 1)
         # Step 4
         x = graph_level
+        """
         residual = x
-        
         if self.normalize_before:
             x = self.self_attn_layer_norm(x)
         x, _ = self.self_attn(
@@ -208,7 +208,7 @@ class TransformerEncoderLayer(nn.Module):
         x = self.residual_connection(x, residual)
         if not self.normalize_before:
             x = self.self_attn_layer_norm(x)
-
+        """
         " Last FFN x => x"
         residual = x
         if self.normalize_before:

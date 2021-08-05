@@ -554,6 +554,8 @@ def get_activation_fn(activation: str) -> Callable:
         return lambda x: torch.fft.fft2(x, dim=(-1,-2)).real
     elif activation == "log_exp":
         return lambda x: torch.log(1 + torch.exp(x))
+    elif activation == "prelu":
+        return nn.PReLU()
     # END CODE
     else:
         raise RuntimeError("--activation-fn {} not supported".format(activation))
@@ -567,7 +569,9 @@ def get_available_activation_fns() -> List:
         "gelu_accurate",
         "tanh",
         "linear",
-        "log_exp"
+        "fft",
+        "log_exp",
+        "prelu"
     ]
 
 
