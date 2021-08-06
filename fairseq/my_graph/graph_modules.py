@@ -268,12 +268,11 @@ class GraphTransformer(MessagePassing):
         out = self.propagate(edge_index, x=x, edge_attr=edge_attr, size=None)
         out = out.view(-1, self.heads * self.out_channels)
         x_r = self.lin_skip(x[1])
-        out = self.lin_beta(torch.cat([out, x_r, out - x_r], dim=-1)) #simplify
-        """
+        
         beta = self.lin_beta(torch.cat([out, x_r, out - x_r], dim=-1))
         beta = beta.sigmoid()
         out = beta * x_r + (1 - beta) * out
-        """
+        
         return out
     def message(self, x_i, x_j, edge_attr,
                 index, ptr=None,
