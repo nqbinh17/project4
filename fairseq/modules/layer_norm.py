@@ -32,8 +32,8 @@ def LayerNorm(normalized_shape, eps=1e-5, elementwise_affine=True, export=False)
         export = True
     if not export and torch.cuda.is_available() and has_fused_layernorm:
         return FusedLayerNorm(normalized_shape, eps, elementwise_affine)
-    return AdaNorm(normalized_shape, eps, elementwise_affine) # temporary hard code
-    #return torch.nn.LayerNorm(normalized_shape, eps, elementwise_affine)
+    #return AdaNorm(normalized_shape, eps, elementwise_affine) # temporary hard code
+    return torch.nn.LayerNorm(normalized_shape, eps, elementwise_affine)
 
 class AdaNorm(nn.LayerNorm):
     def __init__(self, *args, **kwargs):
