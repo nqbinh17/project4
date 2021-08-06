@@ -555,7 +555,7 @@ def get_activation_fn(activation: str) -> Callable:
     elif activation == "log_exp":
         return lambda x: torch.log(1 + torch.exp(x))
     elif activation == "prelu":
-        return nn.PReLU()
+        return torch.nn.PReLU()
     # END CODE
     else:
         raise RuntimeError("--activation-fn {} not supported".format(activation))
