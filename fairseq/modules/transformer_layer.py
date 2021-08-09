@@ -121,7 +121,7 @@ class TransformerEncoderLayer(nn.Module):
     def forward(
         self,
         x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
-        x_line_graph, src_line_edges, src_line_labels
+        x_line_graph, src_line_edges, src_line_labels,
         encoder_padding_mask,
         attn_mask: Optional[Tensor] = None,
     ):

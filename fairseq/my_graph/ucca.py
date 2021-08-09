@@ -47,6 +47,4 @@ class LineUCCALabel(UCCALabel):
         1. This function attempt for batched processing, thus need to be left-padded
         """
         label_list = [self.getIdx(item, label_len) for item in label]
-        while len(label_list) < seq_len:
-          label_list = [[self.getPadIndex()] * label_len] + label_list
         return torch.LongTensor(label_list)

@@ -163,7 +163,7 @@ def collate(
     src_line_nodes = None
     max_len = src_tokens.size(1)
     for s in sort_order:
-        temp = max([len(label) for label in samples[s]['src_line_nodes']])
+        temp = max([0] + [len(label) for label in samples[s]['src_line_nodes']])
         label_max_len = max(label_max_len, temp)
 
     for s in sort_order:
