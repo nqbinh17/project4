@@ -33,4 +33,8 @@ def Process2LineGraph(size, edge, label):
       if d in oneHop:
         for hop1 in oneHop[d]:
           push2Edge(sameDir(d, hop1), 0)
-  return nText, nEdge
+  nLabel = ['' for _ in nEdge[0]]
+  for e, (u, v) in enumerate(zip(*nEdge)):
+    nLabel[e] = nText[u] + nText[v]
+  assert len(nLabel) == len(nEdge[0])
+  return nLabel, nEdge

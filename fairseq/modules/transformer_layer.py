@@ -60,13 +60,13 @@ class TransformerEncoderLayer(nn.Module):
         self.ffn_norm = LayerNorm(self.embed_dim)
         "Initiate 2 Graph Modules"
         #self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
-        self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = False)
+        self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = True)
         "Initiate 2 Attention Layer"
         #self.self_attn = self.build_self_attention(self.embed_dim, args)
 
         "Initiate 1 Feedforward"
         self.ffn = FeedForward(self.embed_dim, 2048, self.embed_dim, 
-                                self.quant_noise, self.quant_noise_block_size, args, activation="log_exp")
+                                self.quant_noise, self.quant_noise_block_size, args)
         # END YOUR CODE
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
@@ -121,7 +121,7 @@ class TransformerEncoderLayer(nn.Module):
     def forward(
         self,
         x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
-        x_line_graph, src_line_edges,
+        x_line_graph, src_line_edges, src_line_labels
         encoder_padding_mask,
         attn_mask: Optional[Tensor] = None,
     ):
@@ -166,7 +166,7 @@ class TransformerEncoderLayer(nn.Module):
         batch, dim = x.size(1), x.size(2)
         if self.normalize_before:
             x_line_graph = self.x_line_graph_norm(x_line_graph)
-        x_line_graph, _ = self.line_graph_encode(x_line_graph, src_line_edges)
+        x_line_graph, src_line_labels = self.line_graph_encode(x_line_graph, src_line_edges, src_line_labels)
         x_line_graph = self.dropout_module(x_line_graph)
         x_line_graph = self.residual_connection(x_line_graph, residual)
         if not self.normalize_before:
@@ -219,7 +219,7 @@ class TransformerEncoderLayer(nn.Module):
         if not self.normalize_before:
             x = self.ffn_norm(x)
         # END YOUR CODE
-        return x, x_graph, src_labels, x_line_graph
+        return x, x_graph, src_labels, x_line_graph, src_line_labels
 
 
 class TransformerDecoderLayer(nn.Module):

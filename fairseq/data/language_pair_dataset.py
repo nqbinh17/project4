@@ -154,10 +154,10 @@ def collate(
 
     """
     1. Batch left-padding for src_line_nodes
-    2. Example input: [[AAA, CC, DD], [E, F, G]]
+    2. Example input: [[AAA, CC, DD], [E, F, G]] # [num_edge, label_len]
     3. Example output: tensor([[000, 11pad, 22pad], [3padpad, 4padpad, 5padpad]])
     4. src_line_nodes == src_tokens, batch + sentence length must equal
-    5. Expected shape: (bz, seq_len, label_len)"""
+    5. Expected shape: (total of labels, label_len)"""
     line_ucca = LineUCCALabel()
     label_max_len = 0
     src_line_nodes = None
@@ -173,9 +173,9 @@ def collate(
             src_line_nodes = padded_label
         else:
             src_line_nodes = torch.cat([src_line_nodes, padded_label], dim = 0) # shape = [Labels, max_len]
-    batch, sen_len = src_tokens.shape
-    src_line_nodes = src_line_nodes.reshape(batch, sen_len, label_max_len)
-
+    #batch, sen_len = src_tokens.shape
+    #src_line_nodes = src_line_nodes.reshape(batch, sen_len, label_max_len)
+    
     """
     1. Processing for src_line_edges
     2. Input shape: [a, b, c, ...] (a, b, c is int)
@@ -188,7 +188,7 @@ def collate(
         src_line_edges = r
       else:
         src_line_edges = torch.cat([src_line_edges, r], dim = 1) # shape = [2, Edges]
-
+    assert src_line_nodes.size(0) == src_line_edges.size(1)
     # END YOUR CODE
     batch = {
         "id": id,

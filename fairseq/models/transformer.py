@@ -578,18 +578,13 @@ class TransformerEncoder(FairseqEncoder):
         2. Example: nodes = John kicked the ball; labels = AG BS C D
         3. Expected output: John_AG, kicked_BS, the_C, ball_D (sum of embedding values)
         4. Thus src_line_nodes + x (shape: bz, seq_len, embed)"""
-        """
-        src_line_nodes = self.label_embedding(src_line_nodes) # (batch, seq_len, label_max_len, embed)
-        src_line_nodes = self.dropout_module(self.embed_scale * src_line_nodes)
-        if self.quant_noise is not None:
-            src_line_nodes = self.quant_noise(src_line_nodes)
-        src_line_nodes = src_line_nodes.sum(2) # AG, BS, C, D => A+G, B+S, C+pad, D+pad
         
-        N, embed_size = x_graph.shape
-        src_line_nodes = src_line_nodes.reshape(N, embed_size)
-        src_line_nodes = src_line_nodes + x_graph.clone() # ... => John+A+G, kicked+B+S, the+C, ball+D
-        x_line_graph = src_line_nodes # change name for regulation
-        """
+        src_line_labels = self.label_embedding(src_line_nodes) # (num of labels, label_max_len, embed)
+        src_line_labels = self.dropout_module(self.embed_scale * src_line_labels)
+        if self.quant_noise is not None:
+            src_line_labels = self.quant_noise(src_line_labels)
+        src_line_labels = src_line_labels.sum(1) # [Labels, embed], i.e: AG, BS, C, D => A+G, B+S, C+pad, D+pad
+      
         x_line_graph = x_graph.clone()
         
         # account for padding while computing the representation
@@ -603,8 +598,8 @@ class TransformerEncoder(FairseqEncoder):
 
         # encoder layers
         for layer in self.layers:
-            x, x_graph, src_labels, x_line_graph = layer(x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
-            x_line_graph, src_line_edges, encoder_padding_mask)
+            x, x_graph, src_labels, x_line_graph, src_line_labels = layer(x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
+            x_line_graph, src_line_edges, src_line_labels, encoder_padding_mask)
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)
