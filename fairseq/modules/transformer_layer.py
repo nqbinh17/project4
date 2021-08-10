@@ -65,7 +65,7 @@ class TransformerEncoderLayer(nn.Module):
         #self.self_attn = self.build_self_attention(self.embed_dim, args)
 
         "Initiate 1 Feedforward"
-        self.ffn = FeedForward(self.embed_dim, 2048, self.embed_dim, 
+        self.ffn = FeedForward(self.embed_dim, args.encoder_ffn_embed_dim, self.embed_dim, 
                                 self.quant_noise, self.quant_noise_block_size, args)
         # END YOUR CODE
 

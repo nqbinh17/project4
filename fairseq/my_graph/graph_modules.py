@@ -294,7 +294,8 @@ class GraphTransformer(MessagePassing):
 class EnhancedGraphTransformer(GraphTransformer):
     def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args,
                  heads: int = 1, isLabeled = True, **kwargs):
-        super(EnhancedGraphTransformer, self).__init__(node_dim=0, **kwargs)
+        super(EnhancedGraphTransformer, self).__init__(in_channels, out_channels, quant_noise, qn_block_size, args,
+                 heads, isLabeled, **kwargs)
 
         self.lin_enhanced_value = build_linear(self.out_channels, self.out_channels, quant_noise, qn_block_size, False)
         self.gating_query_value = GatingResidual(self.out_channels, quant_noise, qn_block_size, args)
@@ -305,7 +306,7 @@ class EnhancedGraphTransformer(GraphTransformer):
                 size_i=None):
         query = self.lin_query(x_i).view(-1, self.heads, self.out_channels)
         key = self.lin_key(x_j).view(-1, self.heads, self.out_channels)
-        if edge_attr != None
+        if edge_attr != None:
             edge_attr = edge_attr.view(-1, self.heads, self.out_channels)
             key += edge_attr
         # Attention Mechanism
@@ -313,7 +314,7 @@ class EnhancedGraphTransformer(GraphTransformer):
         alpha = self.dropout_module(alpha)
 
         value = self.lin_value(x_j).view(-1, self.heads, self.out_channels)
-        if edge_attr != None
+        if edge_attr != None:
             value += edge_attr
         query_hat = self.attention_vq(value * query, index, size_i)
         query_hat = self.dropout_module(query_hat)
