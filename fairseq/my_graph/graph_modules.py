@@ -291,52 +291,30 @@ class GraphTransformer(MessagePassing):
             value += edge_attr
         out = value * alpha.view(-1, self.heads, 1)
         return out
-class EnhancedGraphTransformer(MessagePassing):
+class EnhancedGraphTransformer(GraphTransformer):
     def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args,
-                 heads: int = 1,**kwargs):
-        kwargs.setdefault('aggr', 'add')
-        super(GraphTransformer, self).__init__(node_dim=0, **kwargs)
+                 heads: int = 1, isLabeled = True, **kwargs):
+        super(EnhancedGraphTransformer, self).__init__(node_dim=0, **kwargs)
 
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.heads = heads
-        self.edge_dim = in_channels
-
-        self.dropout_module = FairseqDropout(
-                    args.dropout, module_name=self.__class__.__name__
-                )
-
-        self.lin_key = build_linear(self.in_channels, self.heads * self.out_channels, quant_noise, qn_block_size, False)
-        self.lin_value = build_linear(self.in_channels, self.heads * self.out_channels, quant_noise, qn_block_size, False)
-        self.lin_query = build_linear(self.in_channels, self.heads * self.out_channels, quant_noise, qn_block_size)
-        self.lin_skip = build_linear(self.in_channels, self.heads * self.out_channels, quant_noise, qn_block_size)
-        self.lin_beta = build_linear(3 * self.heads * self.out_channels, self.heads * self.out_channels, quant_noise, qn_block_size)
         self.lin_enhanced_value = build_linear(self.out_channels, self.out_channels, quant_noise, qn_block_size, False)
         self.gating_query_value = GatingResidual(self.out_channels, quant_noise, qn_block_size, args)
-        self.attention_qk = ScoreCollections(self.heads, self.out_channels, "Transformer")
         self.attention_vq = ScoreCollections(self.heads, self.out_channels, "Transformer")
-    def forward(self, x, edge_index, edge_attr):
-        x = (x, x)
-        out = self.propagate(edge_index, x=x, edge_attr=edge_attr, size=None)
-        out = out.view(-1, self.heads * self.out_channels)
-        x_r = self.lin_skip(x[1])
-        beta = self.lin_beta(torch.cat([out, x_r, out - x_r], dim=-1))
-        beta = beta.sigmoid()
-        out = beta * x_r + (1 - beta) * out
-        return out
+
     def message(self, x_i, x_j, edge_attr,
                 index, ptr=None,
                 size_i=None):
         query = self.lin_query(x_i).view(-1, self.heads, self.out_channels)
         key = self.lin_key(x_j).view(-1, self.heads, self.out_channels)
-        edge_attr = edge_attr.view(-1, self.heads, self.out_channels)
-        key += edge_attr
+        if edge_attr != None
+            edge_attr = edge_attr.view(-1, self.heads, self.out_channels)
+            key += edge_attr
         # Attention Mechanism
         alpha = self.attention_qk(query * key, index, size_i)
         alpha = self.dropout_module(alpha)
 
         value = self.lin_value(x_j).view(-1, self.heads, self.out_channels)
-        value += edge_attr
+        if edge_attr != None
+            value += edge_attr
         query_hat = self.attention_vq(value * query, index, size_i)
         query_hat = self.dropout_module(query_hat)
         query_hat = query * query_hat.view(-1, self.heads, 1)
@@ -377,7 +355,7 @@ class UCCAEncoder(nn.Module):
         elif graph_type == "EnhancedGraphTransformer":
             Model = EnhancedGraphTransformer
             head_dim = hidden_dim // 8
-            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, 8)
+            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, 8, self.isLabeled)
         else:
             Model = EdgeConv
             settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args)

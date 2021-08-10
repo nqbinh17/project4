@@ -565,28 +565,8 @@ class TransformerEncoder(FairseqEncoder):
         encoder_padding_mask = src_tokens.eq(self.padding_idx)
         has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
-        x, encoder_embedding, x_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
-        "src_labels idx => src_labels embedding"
-        src_labels = self.label_embedding(src_labels)
-        src_labels = self.embed_scale * src_labels
-        src_labels = self.dropout_module(src_labels)
-        if self.quant_noise is not None:
-            src_labels = self.quant_noise(src_labels)
-
-        """
-        1. src_line_nodes idx (bz, seq_len, label_max_len) => src_line_nodes embedding (..., embed)
-        2. Example: nodes = John kicked the ball; labels = AG BS C D
-        3. Expected output: John_AG, kicked_BS, the_C, ball_D (sum of embedding values)
-        4. Thus src_line_nodes + x (shape: bz, seq_len, embed)"""
-        
-        src_line_labels = self.label_embedding(src_line_nodes) # (num of labels, label_max_len, embed)
-        src_line_labels = self.dropout_module(self.embed_scale * src_line_labels)
-        if self.quant_noise is not None:
-            src_line_labels = self.quant_noise(src_line_labels)
-        src_line_labels = src_line_labels.sum(1) # [Labels, embed], i.e: AG, BS, C, D => A+G, B+S, C+pad, D+pad
-      
-        x_line_graph = x_graph.clone()
-        
+        x, encoder_embedding, x_line_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
+              
         # account for padding while computing the representation
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
@@ -598,8 +578,8 @@ class TransformerEncoder(FairseqEncoder):
 
         # encoder layers
         for layer in self.layers:
-            x, x_graph, src_labels, x_line_graph, src_line_labels = layer(x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
-            x_line_graph, src_line_edges, src_line_labels, encoder_padding_mask)
+            x, x_line_graph = layer(x, src_selected_idx, src_node_idx, embed_pos,
+            x_line_graph, src_line_edges, encoder_padding_mask)
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)

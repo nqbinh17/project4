@@ -60,7 +60,7 @@ class TransformerEncoderLayer(nn.Module):
         self.ffn_norm = LayerNorm(self.embed_dim)
         "Initiate 2 Graph Modules"
         #self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
-        self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = True)
+        self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = False)
         "Initiate 2 Attention Layer"
         #self.self_attn = self.build_self_attention(self.embed_dim, args)
 
@@ -120,8 +120,8 @@ class TransformerEncoderLayer(nn.Module):
 
     def forward(
         self,
-        x, x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
-        x_line_graph, src_line_edges, src_line_labels,
+        x, src_selected_idx, src_node_idx, embed_pos,
+        x_line_graph, src_line_edges,
         encoder_padding_mask,
         attn_mask: Optional[Tensor] = None,
     ):
@@ -149,77 +149,32 @@ class TransformerEncoderLayer(nn.Module):
             attn_mask = attn_mask.masked_fill(attn_mask.to(torch.bool), -1e8)
 
         # START YOUR CODE    
-        """
-        1. Model 90: Only Line Graph
-        """
-
-        """
-        1. Normal Graph + Line Graph Encode Phase
-        2. Step 1: Pass through Line Graph Encode => x_line_graph (=> line_graph_level, line_phrase_level)
-        3. Step 2: Pass through Graph Encode => x_graph (=> graph_level, phrase_level)
-        4. Step 3: Connect (sum or something else) Line Graph + Normal Graph => x_line_graph + x_graph => graph_level, phrase_level
-        5. Step 4: Connect (sum or sth else) token_level + graph_level => x + graph_level (masked out padding in graph_level)
-        6. Step 5: Apply Cross-Attn: x, phrase_level => x"""
-        # Step 1
         
         residual = x_line_graph
         batch, dim = x.size(1), x.size(2)
         if self.normalize_before:
             x_line_graph = self.x_line_graph_norm(x_line_graph)
-        x_line_graph, src_line_labels = self.line_graph_encode(x_line_graph, src_line_edges, src_line_labels)
+        x_line_graph, _ = self.line_graph_encode(x_line_graph, src_line_edges)
         x_line_graph = self.dropout_module(x_line_graph)
         x_line_graph = self.residual_connection(x_line_graph, residual)
         if not self.normalize_before:
             x_line_graph = self.x_line_graph_norm(x_line_graph)
         
-        # Step 2
-        """
-        residual = x_graph
-        batch, dim = x.size(1), x.size(2)
+        residual = x_line_graph
         if self.normalize_before:
-            x_graph = self.x_graph_norm(x_graph)
-        x_graph, src_labels = self.graph_encode(x_graph, src_edges, src_labels)
-        x_graph = self.dropout_module(x_graph)
-        x_graph = self.residual_connection(x_graph, residual)
+            x_line_graph = self.ffn_norm(x_line_graph)
+        x_line_graph = self.ffn(x_line_graph)
+        x_line_graph = self.dropout_module(x_line_graph)
+        x_line_graph = self.residual_connection(x_line_graph, residual)
         if not self.normalize_before:
-            x_graph = self.x_graph_norm(x_graph)
-        """
-        # Step 3
-        graph = x_line_graph
-        graph_level = torch.gather(graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
-        graph_level += embed_pos
-        graph_level = graph_level.transpose(0, 1)
-        #phrase_level = torch.gather(graph.reshape(batch,-1,dim), 1, src_node_idx.unsqueeze(-1).repeat(1,1,dim)).transpose(0, 1)
-        # Step 4
-        x = graph_level
-        """
-        residual = x
-        if self.normalize_before:
-            x = self.self_attn_layer_norm(x)
-        x, _ = self.self_attn(
-            query=x,
-            key=x,
-            value=x,
-            key_padding_mask=encoder_padding_mask,
-            attn_mask=attn_mask,
-        )
+            x_line_graph = self.ffn_norm(x_line_graph)
+
+        x = torch.gather(x_line_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
+        x += embed_pos
+        x = x.transpose(0, 1)
         
-        x = self.dropout_module(x)
-        x = self.residual_connection(x, residual)
-        if not self.normalize_before:
-            x = self.self_attn_layer_norm(x)
-        """
-        " Last FFN x => x"
-        residual = x
-        if self.normalize_before:
-            x = self.ffn_norm(x)
-        x = self.ffn(x)
-        x = self.dropout_module(x)
-        x = self.residual_connection(x, residual)
-        if not self.normalize_before:
-            x = self.ffn_norm(x)
         # END YOUR CODE
-        return x, x_graph, src_labels, x_line_graph, src_line_labels
+        return x, x_line_graph
 
 
 class TransformerDecoderLayer(nn.Module):
