@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from fairseq import utils
 from fairseq.modules import LayerNorm, MultiheadAttention
 from fairseq.modules.fairseq_dropout import FairseqDropout
@@ -75,6 +76,8 @@ class TransformerEncoderLayer(nn.Module):
         self.embed_dim = args.encoder_embed_dim
         self.quant_noise = getattr(args, "quant_noise_pq", 0)
         self.quant_noise_block_size = getattr(args, "quant_noise_pq_block_size", 8) or 8        
+        self.self_attn = self.build_self_attention(self.embed_dim, args)
+        self.self_attn_layer_norm = LayerNorm(self.embed_dim)
         export = getattr(args, "export", False)
         self.dropout_module = FairseqDropout(
             args.dropout, module_name=self.__class__.__name__
@@ -90,6 +93,19 @@ class TransformerEncoderLayer(nn.Module):
             float(activation_dropout_p), module_name=self.__class__.__name__
         )
         self.normalize_before = args.encoder_normalize_before
+        self.fc1 = self.build_fc1(
+            self.embed_dim,
+            args.encoder_ffn_embed_dim,
+            self.quant_noise,
+            self.quant_noise_block_size,
+        )
+        self.fc2 = self.build_fc2(
+            args.encoder_ffn_embed_dim,
+            self.embed_dim,
+            self.quant_noise,
+            self.quant_noise_block_size,
+        )
+        self.final_layer_norm = LayerNorm(self.embed_dim)
         # START YOUR CODE
         phrase_hidden_dim = 2048
         self.attentive_phrase_ffw = PhraseFeedForward(self.embed_dim*2, 
@@ -337,7 +353,7 @@ class TransformerDecoderLayer(nn.Module):
 
         self.onnx_trace = False
         # START YOUR CODE
-        phrase_hidden_dim = args.parse_hidden_dim
+        phrase_hidden_dim = 2048
         self.encoder_embed_dim = args.encoder_embed_dim
         
         self.W_transparent = nn.Parameter(torch.Tensor(args.encoder_layers, 1))

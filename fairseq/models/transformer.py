@@ -464,10 +464,23 @@ class TransformerEncoder(FairseqEncoder):
         self, src_tokens, src_selected_idx, token_embedding: Optional[torch.Tensor] = None,
     ):
         # embed tokens and positions
+        #START YOUR CODE
+        src_tokens = torch.gather(src_tokens, 1, src_selected_idx)
+        batch_size, seq_len = src_tokens.shape
+        ntok = max(3,min(seq_len//6, 8))
+        
+        if seq_len % ntok != 0:
+            pad_len = (seq_len // ntok + 1) * ntok - seq_len
+            pad_seq = torch.tensor(self.padding_idx, device=src_tokens.device)
+            pad_seq = pad_seq.repeat((batch_size, pad_len))
+            src_tokens = torch.cat((src_tokens,pad_seq), axis=1)
+        phrase_shape = (batch_size, src_tokens.shape[1] // ntok, ntok)
+        #END YOUR CODE
+        
         if token_embedding is None:
             x_graph = self.embed_tokens(src_tokens)
             batch, seql, dim = x_graph.shape
-            src_tokens = torch.gather(src_tokens, 1, src_selected_idx)
+            
             x = self.embed_tokens(src_tokens)
         x = embed = self.embed_scale * x
         if self.embed_positions is not None:
@@ -481,17 +494,6 @@ class TransformerEncoder(FairseqEncoder):
         if self.quant_noise is not None:
             x = self.quant_noise(x)
         
-        #START YOUR CODE
-        batch_size, seq_len = src_tokens.shape
-        ntok = max(3,min(seq_len//6, 8))
-        
-        if seq_len % ntok != 0:
-            pad_len = (seq_len // ntok + 1) * ntok - seq_len
-            pad_seq = torch.tensor(self.padding_idx, device=src_tokens.device)
-            pad_seq = pad_seq.repeat((batch_size, pad_len))
-            src_tokens = torch.cat((src_tokens,pad_seq), axis=1)
-        phrase_shape = (batch_size, src_tokens.shape[1] // ntok, ntok)
-        #END YOUR CODE
         return x, embed, src_tokens, phrase_shape
 
     def forward(
