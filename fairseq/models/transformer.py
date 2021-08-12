@@ -427,11 +427,7 @@ class TransformerEncoder(FairseqEncoder):
             self.layer_norm = LayerNorm(embed_dim, export=export)
         else:
             self.layer_norm = None
-        # START YOUR CODE
-        self.line_ucca = LineUCCALabel()
-        self.label_embedding = nn.Embedding(self.line_ucca.length(), embed_dim, padding_idx = self.line_ucca.getPadIndex())
-        nn.init.normal_(self.label_embedding.weight, mean=0, std=embed_dim ** -0.5)
-        # END YOUR CODE
+
     def build_encoder_layer(self, args):
         layer = TransformerEncoderLayer(args)
         checkpoint = getattr(args, "checkpoint_activations", False)
@@ -447,7 +443,23 @@ class TransformerEncoder(FairseqEncoder):
         )
         layer = fsdp_wrap(layer, min_num_params=min_params_to_wrap)
         return layer
-
+    # START YOUR CODE
+    def ngram_reshape(self, x):
+      batch_size, seq_len = x.shape
+      ntok = max(3,min(seq_len//6, 8))
+      
+      if seq_len % ntok != 0:
+        pad_len = (seq_len // ntok + 1) * ntok - seq_len
+        pad_seq = torch.tensor(self.padding_idx, device=x.device)
+        pad_seq = pad_seq.repeat((batch_size, pad_len))
+        x_phrase = torch.cat((x,pad_seq), axis=1)
+      else:
+        x_phrase = x.detach().clone()
+    
+      x_phrase = x_phrase.reshape((batch_size, -1, ntok))
+      return x_phrase
+    
+    # END YOUR CODE
     def forward_embedding(
         self, src_tokens, src_selected_idx, token_embedding: Optional[torch.Tensor] = None,
     ):
@@ -458,23 +470,29 @@ class TransformerEncoder(FairseqEncoder):
             src_tokens = torch.gather(src_tokens, 1, src_selected_idx)
             x = self.embed_tokens(src_tokens)
         x = embed = self.embed_scale * x
-        x_graph = self.embed_scale * x_graph
         if self.embed_positions is not None:
             embed_pos = self.embed_positions(src_tokens)
             x = x + embed_pos
+
         if self.layernorm_embedding is not None:
             x = self.layernorm_embedding(x)
-            x_graph = self.layernorm_embedding(x_graph)
-            embed_pos = self.layernorm_embedding(embed_pos)
+
         x = self.dropout_module(x)
-        x_graph = self.dropout_module(x_graph)
-        embed_pos = self.dropout_module(embed_pos)
         if self.quant_noise is not None:
             x = self.quant_noise(x)
-            x_graph = self.quant_noise(x_graph)
-            embed_pos = self.quant_noise(embed_pos)
-        x_graph = x_graph.reshape(batch * seql, dim)
-        return x, embed, x_graph, embed_pos, src_tokens
+        
+        #START YOUR CODE
+        batch_size, seq_len = src_tokens.shape
+        ntok = max(3,min(seq_len//6, 8))
+        
+        if seq_len % ntok != 0:
+            pad_len = (seq_len // ntok + 1) * ntok - seq_len
+            pad_seq = torch.tensor(self.padding_idx, device=src_tokens.device)
+            pad_seq = pad_seq.repeat((batch_size, pad_len))
+            src_tokens = torch.cat((src_tokens,pad_seq), axis=1)
+        phrase_shape = (batch_size, src_tokens.shape[1] // ntok, ntok)
+        #END YOUR CODE
+        return x, embed, src_tokens, phrase_shape
 
     def forward(
         self,
@@ -565,7 +583,7 @@ class TransformerEncoder(FairseqEncoder):
         encoder_padding_mask = src_tokens.eq(self.padding_idx)
         has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
-        x, encoder_embedding, x_line_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
+        x, encoder_embedding, src_tokens, phrase_shape = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
               
         # account for padding while computing the representation
         # B x T x C -> T x B x C
@@ -577,12 +595,17 @@ class TransformerEncoder(FairseqEncoder):
             encoder_states.append(x)
 
         # encoder layers
+        encoder_phrase_attentive = None
         for layer in self.layers:
-            x, x_line_graph = layer(x, src_selected_idx, src_node_idx, embed_pos,
-            x_line_graph, src_line_edges, encoder_padding_mask)
+            x, attentive_phrase = layer(x, phrase_shape, encoder_padding_mask)
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)
+            
+            if encoder_phrase_attentive == None:
+                encoder_phrase_attentive = attentive_phrase.unsqueeze(0)
+            else:
+                encoder_phrase_attentive = torch.cat([encoder_phrase_attentive, attentive_phrase.unsqueeze(0)], dim=0)
 
         if self.layer_norm is not None:
             x = self.layer_norm(x)
@@ -599,6 +622,7 @@ class TransformerEncoder(FairseqEncoder):
             "encoder_states": encoder_states,  # List[T x B x C]
             "src_tokens": [],
             "src_lengths": [src_lengths],
+            "encoder_phrase_attentive": encoder_phrase_attentive
         }
 
     @torch.jit.export
@@ -645,6 +669,7 @@ class TransformerEncoder(FairseqEncoder):
             for idx, state in enumerate(encoder_states):
                 encoder_states[idx] = state.index_select(1, new_order)
 
+        encoder_phrase_attentive = encoder_out["encoder_phrase_attentive"].index_select(2, new_order)
         return {
             "encoder_out": new_encoder_out,  # T x B x C
             "encoder_padding_mask": new_encoder_padding_mask,  # B x T
@@ -652,6 +677,7 @@ class TransformerEncoder(FairseqEncoder):
             "encoder_states": encoder_states,  # List[T x B x C]
             "src_tokens": src_tokens,  # B x T
             "src_lengths": src_lengths,  # B x 1
+            "encoder_phrase_attentive": encoder_phrase_attentive
         }
 
     def max_positions(self):
@@ -1003,6 +1029,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 self_attn_padding_mask=self_attn_padding_mask,
                 need_attn=bool((idx == alignment_layer)),
                 need_head_weights=bool((idx == alignment_layer)),
+                encoder_phrase_attentive=encoder_out["encoder_phrase_attentive"],
             )
             inner_states.append(x)
             if layer_attn is not None and idx == alignment_layer:
