@@ -8,7 +8,6 @@ import logging
 import numpy as np
 import torch
 from fairseq.data import FairseqDataset, data_utils
-from fairseq.my_graph.ucca import UCCALabel, LineUCCALabel 
 
 logger = logging.getLogger(__name__)
 
@@ -109,87 +108,7 @@ def collate(
             )
     else:
         ntokens = src_lengths.sum().item()
-    # START YOUR CODE
-    n = len(src_tokens)
-    graph_padding = torch.tensor([pad_idx] * n).long().unsqueeze(-1)
-    src_tokens = torch.cat([graph_padding, src_tokens],dim=1)
-    extra_length = src_tokens.eq(pad_idx).long().sum(1)
-    max_len_select = max(len(samples[i]['src_selected_idx']) for i in range(len(samples)))
-    max_len_nodes = max(len(samples[i]['src_node_idx']) for i in range(len(samples)))
-    seq_len = src_tokens.size(1)
-    src_labels = [samples[i]['src_labels'] for i in sort_order]
-    def tensorSelectedIndex(data, obj, max_len):
-        i, e = data
-        x = samples[i][obj] + e
-        pad = torch.LongTensor([0] * (max_len - x.size(0)))
-        return torch.cat([pad, x], dim = 0)
-    src_selected_idx = torch.cat([tensorSelectedIndex(data, "src_selected_idx", max_len_select) for data in zip(sort_order, extra_length)],dim=0).reshape(-1, max_len_select)
-    src_node_idx = torch.cat([tensorSelectedIndex(data, "src_node_idx", max_len_nodes) for data in zip(sort_order, extra_length)],dim=0).reshape(-1, max_len_nodes)
-    
-    "1. Process for src_edges"
-    def tensorEdges(data, item):
-        i, [order, e] = data
-        edge = samples[order][item] + e # move idx to the right, since padding to the left
-        edge = edge + i * seq_len
-        return edge
-    src_edges = None
-    for data in enumerate(zip(sort_order, extra_length)):
-      r = tensorEdges(data, "src_edges")
-      if src_edges == None:
-        src_edges = r
-      else:
-        src_edges = torch.cat([src_edges, r], dim = 1) # shape = [2, Edges]
-    
-    
-    "1. Process for src_labels"
-    src_labels = None
-    
-    for s in sort_order:
-        l = samples[s]['src_labels']
-        if src_labels == None:
-            src_labels = l
-        else:
-            src_labels = torch.cat([src_labels, l], dim = 0) # shape = [Labels]
-    assert src_edges.size(1) == src_labels.size(0)
 
-    """
-    1. Batch left-padding for src_line_nodes
-    2. Example input: [[AAA, CC, DD], [E, F, G]] # [num_edge, label_len]
-    3. Example output: tensor([[000, 11pad, 22pad], [3padpad, 4padpad, 5padpad]])
-    4. src_line_nodes == src_tokens, batch + sentence length must equal
-    5. Expected shape: (total of labels, label_len)"""
-    line_ucca = LineUCCALabel()
-    label_max_len = 0
-    src_line_nodes = None
-    max_len = src_tokens.size(1)
-    for s in sort_order:
-        temp = max([0] + [len(label) for label in samples[s]['src_line_nodes']])
-        label_max_len = max(label_max_len, temp)
-
-    for s in sort_order:
-        l = samples[s]["src_line_nodes"] 
-        padded_label = line_ucca.Label2Seq(l, label_max_len, max_len)
-        if src_line_nodes == None:
-            src_line_nodes = padded_label
-        else:
-            src_line_nodes = torch.cat([src_line_nodes, padded_label], dim = 0) # shape = [Labels, max_len]
-    #batch, sen_len = src_tokens.shape
-    #src_line_nodes = src_line_nodes.reshape(batch, sen_len, label_max_len)
-    
-    """
-    1. Processing for src_line_edges
-    2. Input shape: [a, b, c, ...] (a, b, c is int)
-    3. Output shape: [2, a+b+c..]
-    """
-    src_line_edges = None
-    for data in enumerate(zip(sort_order, extra_length)):
-      r = tensorEdges(data, "src_line_edges")
-      if src_line_edges == None:
-        src_line_edges = r
-      else:
-        src_line_edges = torch.cat([src_line_edges, r], dim = 1) # shape = [2, Edges]
-    assert src_line_nodes.size(0) == src_line_edges.size(1)
-    # END YOUR CODE
     batch = {
         "id": id,
         "nsentences": len(samples),
@@ -197,12 +116,6 @@ def collate(
         "net_input": {
             "src_tokens": src_tokens,
             "src_lengths": src_lengths,
-            "src_edges": src_edges,
-            "src_labels": src_labels,
-            "src_selected_idx": src_selected_idx,
-            "src_node_idx": src_node_idx,
-            "src_line_nodes": src_line_nodes,
-            "src_line_edges": src_line_edges
         },
         "target": target,
     }
@@ -310,11 +223,7 @@ class LanguagePairDataset(FairseqDataset):
         num_buckets=0,
         src_lang_id=None,
         tgt_lang_id=None,
-        pad_to_multiple=1,
-        src_edges = None,
-        src_labels = None,
-        src_line_edges = None,
-        src_line_nodes = None
+        pad_to_multiple=1
     ):
         if tgt_dict is not None:
             assert src_dict.pad() == tgt_dict.pad()
@@ -386,31 +295,8 @@ class LanguagePairDataset(FairseqDataset):
         else:
             self.buckets = None
         self.pad_to_multiple = pad_to_multiple
-        # START YOUR CODE
-        self.src_edges = src_edges
-        self.ucca = UCCALabel()
-        self.src_labels = self.ucca.Label2Seq(src_labels)
-        self.intnode_index = self.src_dict.intnode()
-        self.src_selected_idx = self.get_selected_index()
-        self.src_node_idx = self.get_node_index()
-        self.src_line_nodes = src_line_nodes
-        self.src_line_edges = src_line_edges
-        # END YOUR CODE
-    # START CODE
-    def get_selected_index(self):
-        def selectIndexTensor(idx):
-            select = idx != self.intnode_index
-            position = torch.LongTensor(list(range(idx.size(0))))
-            return position[select]
-        return [selectIndexTensor(src) for src in self.src]
-    def get_node_index(self):
-        def nodeIndexTensor(idx):
-            select = idx == self.intnode_index
-            position = torch.LongTensor(list(range(idx.size(0))))
-            return position[select]
-        return [nodeIndexTensor(src) for src in self.src]
 
-    # END CODE
+
     def get_batch_shapes(self):
         return self.buckets
 
@@ -444,12 +330,6 @@ class LanguagePairDataset(FairseqDataset):
             "id": index,
             "source": src_item,
             "target": tgt_item,
-            "src_edges": self.src_edges[index],
-            "src_labels": self.src_labels[index],
-            "src_selected_idx": self.src_selected_idx[index],
-            "src_node_idx": self.src_node_idx[index],
-            "src_line_nodes": self.src_line_nodes[index],
-            "src_line_edges": self.src_line_edges[index]
         }
         if self.align_dataset is not None:
             example["alignment"] = self.align_dataset[index]

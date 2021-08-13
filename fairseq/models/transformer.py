@@ -31,7 +31,6 @@ from fairseq.modules import (
 from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
-from fairseq.my_graph.ucca import UCCALabel, LineUCCALabel
 import copy
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
@@ -198,14 +197,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
                             help='block size of quantization noise at training time')
         parser.add_argument('--quant-noise-scalar', type=float, metavar='D', default=0,
                             help='scalar quantization noise and scalar quantization at training time')
-        # START YOUR CODE
-        parser.add_argument('--graph-type', type=str, metavar='STR',
-                            help='graph module type e.g: GAT, Sage, normal')
-        parser.add_argument('--is-graph-outside', default=False, action='store_true',
-                            help='if true, graph encoder outside the Transformer')
-        parser.add_argument('--is-phrase-information', default=False, action='store_true',
-                            help='if true, using x_phrase information instead x_graph for cross-attention')
-        # END YOUR CODE
+
         # args for Fully Sharded Data Parallel (FSDP) training
         parser.add_argument(
             '--min-params-to-wrap', type=int, metavar='D', default=DEFAULT_MIN_PARAMS_TO_WRAP,
@@ -308,14 +300,6 @@ class TransformerModel(FairseqEncoderDecoderModel):
         self,
         src_tokens,
         src_lengths,
-        # START YOUR CODE
-        src_edges,
-        src_labels,
-        src_selected_idx,
-        src_node_idx,
-        src_line_nodes,
-        src_line_edges,
-        # END YOUR CODE
         prev_output_tokens,
         return_all_hiddens: bool = True,
         features_only: bool = False,
@@ -330,9 +314,6 @@ class TransformerModel(FairseqEncoderDecoderModel):
         """
         encoder_out = self.encoder(
             src_tokens, src_lengths=src_lengths,
-            src_edges = src_edges, src_labels= src_labels, 
-            src_selected_idx = src_selected_idx, src_node_idx = src_node_idx, 
-            src_line_nodes = src_line_nodes, src_line_edges = src_line_edges,
             return_all_hiddens=return_all_hiddens
         )
         decoder_out = self.decoder(
@@ -461,11 +442,10 @@ class TransformerEncoder(FairseqEncoder):
     
     # END YOUR CODE
     def forward_embedding(
-        self, src_tokens, src_selected_idx, token_embedding: Optional[torch.Tensor] = None,
+        self, src_tokens, token_embedding: Optional[torch.Tensor] = None,
     ):
         # embed tokens and positions
         #START YOUR CODE
-        src_tokens = torch.gather(src_tokens, 1, src_selected_idx)
         batch_size, seq_len = src_tokens.shape
         ntok = max(3,min(seq_len//6, 8))
         
@@ -500,12 +480,6 @@ class TransformerEncoder(FairseqEncoder):
         self,
         src_tokens,
         src_lengths,
-        src_edges,
-        src_labels,
-        src_selected_idx,
-        src_node_idx,
-        src_line_nodes,
-        src_line_edges,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
@@ -533,11 +507,7 @@ class TransformerEncoder(FairseqEncoder):
                   Only populated if *return_all_hiddens* is True.
         """
         return self.forward_scriptable(
-            src_tokens, src_lengths, src_edges,
-            src_labels,
-            src_selected_idx,
-            src_node_idx, 
-            src_line_nodes, src_line_edges,
+            src_tokens, src_lengths,
             return_all_hiddens, token_embeddings
             )
 
@@ -549,11 +519,6 @@ class TransformerEncoder(FairseqEncoder):
         self,
         src_tokens,
         src_lengths,
-        src_edges,
-        src_labels,
-        src_selected_idx,
-        src_node_idx,
-        src_line_nodes, src_line_edges,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
@@ -585,7 +550,7 @@ class TransformerEncoder(FairseqEncoder):
         encoder_padding_mask = src_tokens.eq(self.padding_idx)
         has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
-        x, encoder_embedding, src_tokens, phrase_shape = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
+        x, encoder_embedding, src_tokens, phrase_shape = self.forward_embedding(src_tokens, token_embeddings)
               
         # account for padding while computing the representation
         # B x T x C -> T x B x C
