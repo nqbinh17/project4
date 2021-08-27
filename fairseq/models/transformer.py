@@ -424,44 +424,14 @@ class TransformerEncoder(FairseqEncoder):
         )
         layer = fsdp_wrap(layer, min_num_params=min_params_to_wrap)
         return layer
-    # START YOUR CODE
-    def ngram_reshape(self, x):
-      batch_size, seq_len = x.shape
-      ntok = max(3,min(seq_len//6, 8))
-      
-      if seq_len % ntok != 0:
-        pad_len = (seq_len // ntok + 1) * ntok - seq_len
-        pad_seq = torch.tensor(self.padding_idx, device=x.device)
-        pad_seq = pad_seq.repeat((batch_size, pad_len))
-        x_phrase = torch.cat((x,pad_seq), axis=1)
-      else:
-        x_phrase = x.detach().clone()
-    
-      x_phrase = x_phrase.reshape((batch_size, -1, ntok))
-      return x_phrase
-    
-    # END YOUR CODE
+
     def forward_embedding(
         self, src_tokens, token_embedding: Optional[torch.Tensor] = None,
     ):
         # embed tokens and positions
-        #START YOUR CODE
-        batch_size, seq_len = src_tokens.shape
-        ntok = max(3,min(seq_len//6, 8))
-        
-        if seq_len % ntok != 0:
-            pad_len = (seq_len // ntok + 1) * ntok - seq_len
-            pad_seq = torch.tensor(self.padding_idx, device=src_tokens.device)
-            pad_seq = pad_seq.repeat((batch_size, pad_len))
-            src_tokens = torch.cat((src_tokens,pad_seq), axis=1)
-        phrase_shape = (batch_size, src_tokens.shape[1] // ntok, ntok)
-        #END YOUR CODE
-        
-        if token_embedding is None:
-            x_graph = self.embed_tokens(src_tokens)
-            batch, seql, dim = x_graph.shape
-            
+        if token_embedding is None:            
             x = self.embed_tokens(src_tokens)
+            
         x = embed = self.embed_scale * x
         if self.embed_positions is not None:
             embed_pos = self.embed_positions(src_tokens)
@@ -474,7 +444,7 @@ class TransformerEncoder(FairseqEncoder):
         if self.quant_noise is not None:
             x = self.quant_noise(x)
         
-        return x, embed, src_tokens, phrase_shape
+        return x, embed, src_tokens
 
     def forward(
         self,
@@ -550,7 +520,7 @@ class TransformerEncoder(FairseqEncoder):
         encoder_padding_mask = src_tokens.eq(self.padding_idx)
         has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
-        x, encoder_embedding, src_tokens, phrase_shape = self.forward_embedding(src_tokens, token_embeddings)
+        x, encoder_embedding, src_tokens = self.forward_embedding(src_tokens, token_embeddings)
               
         # account for padding while computing the representation
         # B x T x C -> T x B x C
@@ -562,17 +532,12 @@ class TransformerEncoder(FairseqEncoder):
             encoder_states.append(x)
 
         # encoder layers
-        encoder_phrase_attentive = None
         for layer in self.layers:
-            x, attentive_phrase = layer(x, phrase_shape, encoder_padding_mask)
+            x = layer(x, encoder_padding_mask)
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)
             
-            if encoder_phrase_attentive == None:
-                encoder_phrase_attentive = attentive_phrase.unsqueeze(0)
-            else:
-                encoder_phrase_attentive = torch.cat([encoder_phrase_attentive, attentive_phrase.unsqueeze(0)], dim=0)
 
         if self.layer_norm is not None:
             x = self.layer_norm(x)
@@ -589,7 +554,6 @@ class TransformerEncoder(FairseqEncoder):
             "encoder_states": encoder_states,  # List[T x B x C]
             "src_tokens": [],
             "src_lengths": [src_lengths],
-            "encoder_phrase_attentive": encoder_phrase_attentive
         }
 
     @torch.jit.export
@@ -644,7 +608,6 @@ class TransformerEncoder(FairseqEncoder):
             "encoder_states": encoder_states,  # List[T x B x C]
             "src_tokens": src_tokens,  # B x T
             "src_lengths": src_lengths,  # B x 1
-            "encoder_phrase_attentive": encoder_phrase_attentive
         }
 
     def max_positions(self):
@@ -996,7 +959,6 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 self_attn_padding_mask=self_attn_padding_mask,
                 need_attn=bool((idx == alignment_layer)),
                 need_head_weights=bool((idx == alignment_layer)),
-                encoder_phrase_attentive=encoder_out["encoder_phrase_attentive"],
             )
             inner_states.append(x)
             if layer_attn is not None and idx == alignment_layer:
