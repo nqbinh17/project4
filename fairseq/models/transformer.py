@@ -431,7 +431,7 @@ class TransformerEncoder(FairseqEncoder):
         # embed tokens and positions
         if token_embedding is None:            
             x = self.embed_tokens(src_tokens)
-            
+
         x = embed = self.embed_scale * x
         if self.embed_positions is not None:
             embed_pos = self.embed_positions(src_tokens)
@@ -600,7 +600,6 @@ class TransformerEncoder(FairseqEncoder):
             for idx, state in enumerate(encoder_states):
                 encoder_states[idx] = state.index_select(1, new_order)
 
-        encoder_phrase_attentive = encoder_out["encoder_phrase_attentive"].index_select(2, new_order)
         return {
             "encoder_out": new_encoder_out,  # T x B x C
             "encoder_padding_mask": new_encoder_padding_mask,  # B x T
