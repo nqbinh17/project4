@@ -451,12 +451,12 @@ class TransformerEncoder(FairseqEncoder):
     def forward_embedding(
         self, src_tokens, src_selected_idx, token_embedding: Optional[torch.Tensor] = None,
     ):
-        # embed tokens and positions
         if token_embedding is None:
-            x_graph = self.embed_tokens(src_tokens)
-            batch, seql, dim = x_graph.shape
+            token_embedding = self.embed_tokens(src_tokens)
+            batch, seql, dim = token_embedding.shape
             src_tokens = torch.gather(src_tokens, 1, src_selected_idx)
-            x = self.embed_tokens(src_tokens)
+            x = torch.gather(token_embedding, 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
+            x_graph = token_embedding
         x = embed = self.embed_scale * x
         x_graph = self.embed_scale * x_graph
         if self.embed_positions is not None:
@@ -565,7 +565,10 @@ class TransformerEncoder(FairseqEncoder):
         encoder_padding_mask = src_tokens.eq(self.padding_idx)
         has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
-        x, encoder_embedding, x_line_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
+        x, encoder_embedding, x_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
+        src_labels = self.label_embedding(src_labels)
+        src_labels = self.embed_scale * src_labels
+        src_labels = self.dropout_module(src_labels)
               
         # account for padding while computing the representation
         # B x T x C -> T x B x C
@@ -578,8 +581,8 @@ class TransformerEncoder(FairseqEncoder):
 
         # encoder layers
         for layer in self.layers:
-            x, x_line_graph = layer(x, src_selected_idx, src_node_idx, embed_pos,
-            x_line_graph, src_line_edges, encoder_padding_mask)
+            x, x_graph, src_labels = layer(x, x_graph, src_edges, src_selected_idx, src_labels, 
+                                    src_node_idx, embed_pos, encoder_padding_mask)
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)

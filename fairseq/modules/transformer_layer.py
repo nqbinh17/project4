@@ -38,6 +38,8 @@ class TransformerEncoderLayer(nn.Module):
         self.quant_noise = getattr(args, "quant_noise_pq", 0)
         self.quant_noise_block_size = getattr(args, "quant_noise_pq_block_size", 8) or 8        
         export = getattr(args, "export", False)
+        self.self_attn = self.build_self_attention(self.embed_dim, args)
+        self.self_attn_layer_norm = LayerNorm(self.embed_dim)
         self.dropout_module = FairseqDropout(
             args.dropout, module_name=self.__class__.__name__
         )
@@ -52,21 +54,34 @@ class TransformerEncoderLayer(nn.Module):
             float(activation_dropout_p), module_name=self.__class__.__name__
         )
         self.normalize_before = args.encoder_normalize_before
-        # START YOUR CODE
-        "Initiate 6 LayerNorm"
-        #self.self_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
-        #self.x_graph_norm = LayerNorm(self.embed_dim)
-        self.x_line_graph_norm = LayerNorm(self.embed_dim)
-        self.ffn_norm = LayerNorm(self.embed_dim)
-        "Initiate 2 Graph Modules"
-        #self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
-        self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = False)
-        "Initiate 2 Attention Layer"
-        #self.self_attn = self.build_self_attention(self.embed_dim, args)
-
-        "Initiate 1 Feedforward"
-        self.ffn = FeedForward(self.embed_dim, args.encoder_ffn_embed_dim, self.embed_dim, 
-                                self.quant_noise, self.quant_noise_block_size, args)
+        self.fc1 = self.build_fc1(
+            self.embed_dim,
+            args.encoder_ffn_embed_dim,
+            self.quant_noise,
+            self.quant_noise_block_size,
+        )
+        self.fc2 = self.build_fc2(
+            args.encoder_ffn_embed_dim,
+            self.embed_dim,
+            self.quant_noise,
+            self.quant_noise_block_size,
+        )
+         # START YOUR CODE
+        self.is_graph_outside = getattr(args, "is_graph_outside", False)
+        self.is_phrase_information = getattr(args, "is_phrase_information", False)
+        if self.is_graph_outside == False:
+            self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
+        self.gated_residual = GatingResidual(self.embed_dim, self.quant_noise,
+            self.quant_noise_block_size, args)
+        self.word_graph_gated_residual = GatingResidual(self.embed_dim, self.quant_noise,
+            self.quant_noise_block_size, args)
+        self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
+        self.attentive_combining_ffw = FeedForward(self.embed_dim*2, 
+                                                    2048, 
+                                                    self.embed_dim, 
+                                                    self.quant_noise, 
+                                                    self.quant_noise_block_size,
+                                                    args)
         # END YOUR CODE
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
@@ -119,10 +134,8 @@ class TransformerEncoderLayer(nn.Module):
                     del state_dict[k]
 
     def forward(
-        self,
-        x, src_selected_idx, src_node_idx, embed_pos,
-        x_line_graph, src_line_edges,
-        encoder_padding_mask,
+        self, x, 
+        x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
         attn_mask: Optional[Tensor] = None,
     ):
         """
@@ -149,32 +162,62 @@ class TransformerEncoderLayer(nn.Module):
             attn_mask = attn_mask.masked_fill(attn_mask.to(torch.bool), -1e8)
 
         # START YOUR CODE    
-        
-        residual = x_line_graph
-        batch, dim = x.size(1), x.size(2)
+        residual = x
         if self.normalize_before:
-            x_line_graph = self.x_line_graph_norm(x_line_graph)
-        x_line_graph, _ = self.line_graph_encode(x_line_graph, src_line_edges)
-        x_line_graph = self.dropout_module(x_line_graph)
-        x_line_graph = self.residual_connection(x_line_graph, residual)
+            x = self.self_attn_layer_norm(x)
+        x, _ = self.self_attn(
+            query=x,
+            key=x,
+            value=x,
+            key_padding_mask=encoder_padding_mask,
+            attn_mask=attn_mask,
+        )
+        x = self.dropout_module(x)
+        x = self.residual_connection(x, residual)
         if not self.normalize_before:
-            x_line_graph = self.x_line_graph_norm(x_line_graph)
-        
-        residual = x_line_graph
-        if self.normalize_before:
-            x_line_graph = self.ffn_norm(x_line_graph)
-        x_line_graph = self.ffn(x_line_graph)
-        x_line_graph = self.dropout_module(x_line_graph)
-        x_line_graph = self.residual_connection(x_line_graph, residual)
-        if not self.normalize_before:
-            x_line_graph = self.ffn_norm(x_line_graph)
-
-        x = torch.gather(x_line_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
-        x += embed_pos
-        x = x.transpose(0, 1)
-        
+            x = self.self_attn_layer_norm(x)
+        # START YOUR CODE
+        residual = x
+        batch, dim = x.size(1), x.size(2) 
+        if self.is_graph_outside == False:
+            x_graph, src_labels = self.graph_encode(x_graph, src_edges, src_labels)
+            residual_graph = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
+            residual_graph += embed_pos
+            residual_graph = residual_graph.transpose(0, 1)
+            residual_graph = self.dropout_module(residual_graph)
+        else:
+            residual_graph = x_graph
+        x = self.word_graph_gated_residual(x, residual_graph)
+        x = self.self_attn_layer_norm(x)
+        if self.is_phrase_information == True:
+            x_phrase = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_node_idx.unsqueeze(-1).repeat(1,1,dim))
+            x_out, _ = self.phrase_attn(
+                            query=x,
+                            key=x_phrase,
+                            value=x_phrase)
+        else:
+            x_out, _ = self.phrase_attn(
+                            query=x,
+                            key=residual_graph,
+                            value=residual_graph,
+                            key_padding_mask=encoder_padding_mask)
+        x_out = self.dropout_module(x_out)
+        x = self.attentive_combining_ffw(torch.cat((x, x_out), dim=-1))
+        x = self.dropout_module(x)
+        x = self.gated_residual(x, residual_graph)
+        x = self.self_attn_layer_norm(x)
         # END YOUR CODE
-        return x, x_line_graph
+        #residual = x
+        if self.normalize_before:
+            x = self.final_layer_norm(x)
+        x = self.activation_fn(self.fc1(x))
+        x = self.activation_dropout_module(x)
+        x = self.fc2(x)
+        x = self.dropout_module(x)
+        x = self.residual_connection(x, residual)
+        if not self.normalize_before:
+            x = self.final_layer_norm(x)
+        return x, x_graph, src_labels
 
 
 class TransformerDecoderLayer(nn.Module):
