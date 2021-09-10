@@ -264,6 +264,7 @@ class TranslationConfig(FairseqDataclass):
     eval_bleu_print_samples: bool = field(
         default=False, metadata={"help": "print sample generations during validation"}
     )
+    significance_index_path: Optional[str] = field(default = None)
 
 
 @register_task("translation", dataclass=TranslationConfig)

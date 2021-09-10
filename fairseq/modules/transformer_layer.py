@@ -14,47 +14,6 @@ from fairseq.modules.fairseq_dropout import FairseqDropout
 from fairseq.modules.quant_noise import quant_noise
 from torch import Tensor
 
-# START YOUR CODE
-class PhraseFeedForward(nn.Module):
-    def __init__(self, in_dim, hidden_dim, out_dim, quant_noise, qn_block_size, args):
-        super().__init__()
-        self.fc1 = self.build_ffw(in_dim, hidden_dim, quant_noise, qn_block_size)
-        self.fc2 = self.build_ffw(hidden_dim, out_dim, quant_noise, qn_block_size)
-        self.phrase_activation_fn = utils.get_activation_fn(
-            activation=getattr(args, 'activation_fn', 'relu') or "relu"
-        ) #torch.sigmoid
-        activation_dropout_p = getattr(args, "activation_dropout", 0) or 0
-        if activation_dropout_p == 0:
-            # for backwards compatibility with models that use args.relu_dropout
-            activation_dropout_p = getattr(args, "relu_dropout", 0) or 0
-        self.activation_dropout_module = FairseqDropout(
-            float(activation_dropout_p), module_name=self.__class__.__name__
-        )
-    def build_ffw(self, input_dim, output_dim, q_noise, qn_block_size):
-      return quant_noise(
-            nn.Linear(input_dim, output_dim), p=q_noise, block_size=qn_block_size
-        )
-    def forward(self, x):
-        #x = self.phrase_activation_fn(self.fc1(x))
-        x = torch.sigmoid(self.fc1(x)) # learning source
-        x = self.activation_dropout_module(x)
-        x = self.fc2(x)
-        return x
-class GatingResidual(nn.Module):
-    def __init__(self, embed_dim, hidden_dim, quant_noise, qn_block_size, args):
-        super().__init__()
-        self.fc1 = self.build_ffw(embed_dim, hidden_dim, quant_noise, qn_block_size)
-        self.fc_sublayer = self.build_ffw(embed_dim, hidden_dim, quant_noise, qn_block_size)
-    def build_ffw(self, input_dim, output_dim, q_noise, qn_block_size):
-      return quant_noise(
-            nn.Linear(input_dim, output_dim, bias = False), p=q_noise, block_size=qn_block_size
-        )
-    def forward(self, x, sublayer):
-        alpha = torch.sigmoid(self.fc1(x) + self.fc_sublayer(sublayer))
-        x = alpha * x + (1 - alpha) * sublayer
-        return x
-# END YOUR CODE  
-
 class TransformerEncoderLayer(nn.Module):
     """Encoder layer block.
 
@@ -106,23 +65,6 @@ class TransformerEncoderLayer(nn.Module):
             self.quant_noise_block_size,
         )
         self.final_layer_norm = LayerNorm(self.embed_dim)
-        # START YOUR CODE
-        phrase_hidden_dim = 2048
-        self.attentive_combining_ffw = PhraseFeedForward(self.embed_dim*2, 
-                                                      phrase_hidden_dim, 
-                                                      self.embed_dim, 
-                                                      self.quant_noise, 
-                                                      self.quant_noise_block_size,
-                                                      args)
-        self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
-        self.context_residual = GatingResidual(self.embed_dim, 
-                                               1, 
-                                               self.quant_noise, 
-                                               self.quant_noise_block_size,
-                                               args)
-        
-        # END YOUR CODE
-
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
         return quant_noise(
@@ -143,20 +85,7 @@ class TransformerEncoderLayer(nn.Module):
             q_noise=self.quant_noise,
             qn_block_size=self.quant_noise_block_size,
         )
-    # START YOUR CODE
-    def build_phrase_attention(self, embed_dim, args):
-        return MultiheadAttention(
-            embed_dim,
-            args.encoder_attention_heads,
-            kdim=self.embed_dim,
-            vdim=self.embed_dim,
-            dropout=args.attention_dropout,
-            self_attention=True,
-            q_noise=self.quant_noise,
-            qn_block_size=self.quant_noise_block_size,
-        )
-    
-    # END YOUR CODE
+
     def residual_connection(self, x, residual):
         return residual + x
 
@@ -217,27 +146,7 @@ class TransformerEncoderLayer(nn.Module):
         if not self.normalize_before:
             x = self.self_attn_layer_norm(x)
 
-        phrase_residual = x
         residual = x
-        if self.normalize_before:
-            x = self.self_attn_layer_norm(x)
-        # START YOUR CODE
-        x_out, _ = self.phrase_attn(
-                query=x, 
-                key=x, 
-                value=x)
-        x_out = self.dropout_module(x_out)
-        #x_out = self.residual_connection(x_out, phrase_residual)
-        
-        x = self.attentive_combining_ffw(torch.cat((x, x_out), dim=-1))
-        x = self.dropout_module(x)
-        x = self.context_residual(phrase_residual, x)
-        #residual = x
-        if self.normalize_before:
-            x = self.self_attn_layer_norm(x)
-        # END YOUR CODE
-        
-        #residual = x
         if self.normalize_before:
             x = self.final_layer_norm(x)
         x = self.activation_fn(self.fc1(x))
