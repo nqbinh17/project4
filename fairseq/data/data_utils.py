@@ -70,7 +70,7 @@ def collate_tokens(
     return res
 
 def load_indexed_dataset(
-    path, dictionary=None, dataset_impl=None, combine=False, default="cached"
+    path, dictionary=None, dataset_impl=None, combine=False, default="cached",
 ):
     """A helper function for loading indexed datasets.
 
@@ -110,7 +110,6 @@ def load_indexed_dataset(
         )
         if dataset is None:
             break
-        logger.info("loaded {:,} examples from: {}".format(len(dataset), path_k))
         datasets.append(dataset)
         if not combine:
             break

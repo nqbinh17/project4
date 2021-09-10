@@ -314,7 +314,8 @@ class LanguagePairDataset(FairseqDataset):
         src_edges = None,
         src_labels = None,
         src_line_edges = None,
-        src_line_nodes = None
+        src_line_nodes = None,
+        significance_index_data = None,
     ):
         if tgt_dict is not None:
             assert src_dict.pad() == tgt_dict.pad()
@@ -395,14 +396,51 @@ class LanguagePairDataset(FairseqDataset):
         self.src_node_idx = self.get_node_index()
         self.src_line_nodes = src_line_nodes
         self.src_line_edges = src_line_edges
+        self.significance_index_data = significance_index_data
+        self.change_significance_index_data()
         # END YOUR CODE
+
     # START CODE
+    def change_significance_index_data(self):
+      src = []
+      src_sizes = []
+      src_edges = []
+      src_labels = []
+      src_selected_idx = []
+      src_node_idx = []
+      src_line_nodes = []
+      src_line_edges = []
+      tgt = []
+      tgt_sizes = []
+      for index in self.significance_index_data:
+        src.append(self.src[index])
+        src_sizes.append(self.src_sizes[index])
+        src_edges.append(self.src_edges[index])
+        src_labels.append(self.src_labels[index])
+        src_selected_idx.append(self.src_selected_idx[index])
+        src_node_idx.append(self.src_node_idx[index])
+        src_line_nodes.append(self.src_line_nodes[index])
+        src_line_edges.append(self.src_line_edges[index])
+        tgt.append(self.tgt[index])
+        tgt_sizes.append(self.tgt_sizes[index])
+      self.src = src
+      self.src_sizes = np.array(src_sizes)
+      self.src_edges = src_edges
+      self.src_labels = src_labels
+      self.src_selected_idx = src_selected_idx
+      self.src_node_idx = src_node_idx
+      self.src_line_nodes = src_line_nodes
+      self.src_line_edges = src_line_edges
+      self.tgt = tgt
+      self.tgt_sizes = np.array(tgt_sizes)
+
     def get_selected_index(self):
         def selectIndexTensor(idx):
             select = idx != self.intnode_index
             position = torch.LongTensor(list(range(idx.size(0))))
             return position[select]
         return [selectIndexTensor(src) for src in self.src]
+
     def get_node_index(self):
         def nodeIndexTensor(idx):
             select = idx == self.intnode_index

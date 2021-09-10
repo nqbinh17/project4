@@ -158,9 +158,16 @@ def _main(cfg: DictConfig, output_file):
             x = tokenizer.decode(x)
         return x
 
-    for i in range(10):
-        print(cfg.graph_path)
-        task.load_dataset(cfg.dataset.gen_subset, task_cfg=saved_cfg.task, graph_path=cfg.graph_path)
+    with open(cfg.task.significance_index_path, "r") as f:
+      datas = f.readlines()
+      significance_index_datas = []
+      for d in datas:
+        processed = list(map(lambda x: int(x), d.split()))
+        significance_index_datas.append(processed)
+
+    for i, significance_index_data in enumerate(significance_index_datas):
+        print("Significance Testing {}".format(i+1))
+        task.load_dataset(cfg.dataset.gen_subset, task_cfg=saved_cfg.task, significance_index_data = significance_index_data)
         itr = task.get_batch_iterator(
             dataset=task.dataset(cfg.dataset.gen_subset),
             max_tokens=cfg.dataset.max_tokens,

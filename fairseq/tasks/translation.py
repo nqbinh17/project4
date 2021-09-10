@@ -58,7 +58,8 @@ def load_langpair_dataset(
     shuffle=True,
     pad_to_multiple=1,
     prepend_bos_src=None,
-    graph_path = None
+    graph_path = None,
+    significance_index_data = None
 ):
     def split_exists(split, src, tgt, lang, data_path):
         filename = os.path.join(data_path, "{}.{}-{}.{}".format(split, src, tgt, lang))
@@ -101,12 +102,6 @@ def load_langpair_dataset(
         )
         if tgt_dataset is not None:
             tgt_datasets.append(tgt_dataset)
-
-        logger.info(
-            "{} {} {}-{} {} examples".format(
-                data_path, split_k, src, tgt, len(src_datasets[-1])
-            )
-        )
 
         if not combine:
             break
@@ -174,12 +169,6 @@ def load_langpair_dataset(
     for data in label_list:
         src_labels.append(data.replace('\n','').split())
     del label_list
-    logger.info(
-            "loaded {} examples from: {}".format(
-                len(src_edges), graph_path+'.edge'))
-    logger.info(
-            "loaded {} examples from: {}".format(
-                len(src_labels), graph_path+'.label'))
     
     src_line_edges = []
     src_line_nodes = []
@@ -205,7 +194,8 @@ def load_langpair_dataset(
         src_edges = src_edges,
         src_labels = src_labels,
         src_line_edges = src_line_edges,
-        src_line_nodes = src_line_nodes
+        src_line_nodes = src_line_nodes,
+        significance_index_data = significance_index_data
     )
 
 
@@ -305,6 +295,7 @@ class TranslationConfig(FairseqDataclass):
     graph_train_path: Optional[str] = field(default = None)
     graph_valid_path: Optional[str] = field(default = None)
     graph_test_path: Optional[str] = field(default = None)
+    significance_index_path: Optional[str] = field(default = None)
     # END CODE
 
 
@@ -363,7 +354,7 @@ class TranslationTask(FairseqTask):
 
         return cls(cfg, src_dict, tgt_dict)
 
-    def load_dataset(self, split, epoch=1, combine=False, graph_path=None, **kwargs):
+    def load_dataset(self, split, epoch=1, combine=False, graph_path=None, significance_index_data = None, **kwargs):
         """Load a given dataset split.
 
         Args:
@@ -412,7 +403,8 @@ class TranslationTask(FairseqTask):
             num_buckets=self.cfg.num_batch_buckets,
             shuffle=(split != "test"),
             pad_to_multiple=self.cfg.required_seq_len_multiple,
-            graph_path = graph_path
+            graph_path = graph_path,
+            significance_index_data = significance_index_data
         )
 
     def build_dataset_for_inference(self, src_tokens, src_lengths, constraints=None):
