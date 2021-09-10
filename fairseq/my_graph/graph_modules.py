@@ -320,9 +320,7 @@ class EnhancedGraphTransformer(GraphTransformer):
         query_hat = self.dropout_module(query_hat)
         query_hat = query * query_hat.view(-1, self.heads, 1)
 
-        value_enhanced = self.lin_enhanced_value(value)
-        query_hat = query_hat * value_enhanced
-        value_enhanced = self.gating_query_value(query_hat, value)
+        value_enhanced = self.gating_query_value(query_hat * self.lin_enhanced_value(value), value)
         out = value_enhanced * alpha.view(-1, self.heads, 1)
 
         return out
