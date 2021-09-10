@@ -223,8 +223,7 @@ class LanguagePairDataset(FairseqDataset):
         num_buckets=0,
         src_lang_id=None,
         tgt_lang_id=None,
-        pad_to_multiple=1,
-        significance_index_data = None
+        pad_to_multiple=1
     ):
         if tgt_dict is not None:
             assert src_dict.pad() == tgt_dict.pad()
@@ -296,25 +295,7 @@ class LanguagePairDataset(FairseqDataset):
         else:
             self.buckets = None
         self.pad_to_multiple = pad_to_multiple
-        self.significance_index_data = significance_index_data
-        self.change_significance_index_data()
 
-    def change_significance_index_data(self):
-        src = []
-        src_sizes = []
-        tgt = []
-        tgt_sizes = []
-        
-        for index in self.significance_index_data:
-            src.append(self.src[index])
-            src_sizes.append(self.src_sizes[index])
-            tgt.append(self.tgt[index])
-            tgt_sizes.append(self.tgt_sizes[index])
-
-        self.src = src
-        self.src_sizes = np.array(src_sizes)
-        self.tgt = tgt
-        self.tgt_sizes = np.array(tgt_sizes)
 
     def get_batch_shapes(self):
         return self.buckets
