@@ -56,7 +56,8 @@ def load_langpair_dataset(
     num_buckets=0,
     shuffle=True,
     pad_to_multiple=1,
-    prepend_bos_src=None
+    prepend_bos_src=None,
+    significance_index_data = None
 ):
     def split_exists(split, src, tgt, lang, data_path):
         filename = os.path.join(data_path, "{}.{}-{}.{}".format(split, src, tgt, lang))
@@ -166,7 +167,8 @@ def load_langpair_dataset(
         eos=eos,
         num_buckets=num_buckets,
         shuffle=shuffle,
-        pad_to_multiple=pad_to_multiple
+        pad_to_multiple=pad_to_multiple,
+        significance_index_data = significance_index_data
     )
 
 
@@ -319,7 +321,7 @@ class TranslationTask(FairseqTask):
 
         return cls(cfg, src_dict, tgt_dict)
 
-    def load_dataset(self, split, epoch=1, combine=False, **kwargs):
+    def load_dataset(self, split, epoch=1, combine=False, significance_index_data = None, **kwargs):
         """Load a given dataset split.
 
         Args:
@@ -353,7 +355,8 @@ class TranslationTask(FairseqTask):
             truncate_source=self.cfg.truncate_source,
             num_buckets=self.cfg.num_batch_buckets,
             shuffle=(split != "test"),
-            pad_to_multiple=self.cfg.required_seq_len_multiple
+            pad_to_multiple=self.cfg.required_seq_len_multiple,
+            significance_index_data = significance_index_data
         )
 
     def build_dataset_for_inference(self, src_tokens, src_lengths, constraints=None):
