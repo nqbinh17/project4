@@ -238,6 +238,10 @@ def get_parser(desc, default_task="translation"):
         choices=TASK_REGISTRY.keys(),
         help="task",
     )
+    parser.add_argument(
+        "--graph-path",
+        default=None
+    )
     # fmt: on
     return parser
 

@@ -363,7 +363,7 @@ class TranslationTask(FairseqTask):
 
         return cls(cfg, src_dict, tgt_dict)
 
-    def load_dataset(self, split, epoch=1, combine=False, **kwargs):
+    def load_dataset(self, split, epoch=1, combine=False, graph_path=None, **kwargs):
         """Load a given dataset split.
 
         Args:
@@ -379,7 +379,9 @@ class TranslationTask(FairseqTask):
         # infer langcode
         src, tgt = self.cfg.source_lang, self.cfg.target_lang
         # START YOUR CODE
-        if split == 'train':
+        if graph_path != None:
+            graph_path = graph_path
+        elif split == 'train':
             graph_path = self.cfg.graph_train_path
         elif split == 'valid':
             graph_path = self.cfg.graph_valid_path
