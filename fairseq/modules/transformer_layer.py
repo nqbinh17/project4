@@ -67,6 +67,7 @@ class TransformerEncoderLayer(nn.Module):
             self.quant_noise_block_size,
         )
          # START YOUR CODE
+        self.final_layer_norm = LayerNorm(self.embed_dim)
         self.is_graph_outside = getattr(args, "is_graph_outside", False)
         self.is_phrase_information = getattr(args, "is_phrase_information", False)
         if self.is_graph_outside == False:
@@ -136,7 +137,7 @@ class TransformerEncoderLayer(nn.Module):
     def forward(
         self, x, 
         x_graph, src_edges, src_selected_idx, src_labels, src_node_idx, embed_pos,
-        attn_mask: Optional[Tensor] = None,
+        encoder_padding_mask=None, attn_mask: Optional[Tensor] = None,
     ):
         """
         Args:
