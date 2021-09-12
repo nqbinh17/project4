@@ -338,7 +338,7 @@ class UCCAEncoder(nn.Module):
         self.quant_noise_block_size = getattr(args, 'quant_noise_pq_block_size', 8) or 8
         self.num_layers = 3 # hard-code
         self.isLabeled = isLabeled
-        self.num_heads = 8
+        self.num_heads = args.encoder_attention_heads
         self.dropout_module = FairseqDropout(
             args.dropout, module_name=self.__class__.__name__
         )
@@ -355,7 +355,7 @@ class UCCAEncoder(nn.Module):
             settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, self.num_heads, self.isLabeled)
         elif graph_type == "EnhancedGraphTransformer":
             Model = EnhancedGraphTransformer
-            head_dim = hidden_dim // 8
+            head_dim = hidden_dim // self.num_heads
             settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, 8, self.isLabeled)
         else:
             Model = EdgeConv
