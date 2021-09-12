@@ -336,7 +336,7 @@ class UCCAEncoder(nn.Module):
         self.quant_noise_block_size = getattr(args, 'quant_noise_pq_block_size', 8) or 8
         self.num_layers = 3 # hard-code
         self.isLabeled = isLabeled
-        self.num_heads = 8
+        self.num_heads = args.encoder_attention_heads
         self.dropout_module = FairseqDropout(
             args.dropout, module_name=self.__class__.__name__
         )
