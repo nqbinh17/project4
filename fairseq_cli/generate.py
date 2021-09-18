@@ -22,7 +22,32 @@ from fairseq.dataclass.utils import convert_namespace_to_omegaconf
 from fairseq.logging import progress_bar
 from fairseq.logging.meters import StopwatchMeter, TimeMeter
 from omegaconf import DictConfig
+import pymeteor.pymeteor as pymeteor
 
+class MeteorScorer:
+    def __init__(self):
+        self.cnt_str = 0
+        self.total_meteor_str = 0.0
+
+        self.cnt_tok = 0
+        self.total_meteor_tok = 0.0
+
+    def to_string(self, tensor):
+        return ' '.join(map(lambda x: str(x), tensor.tolist()))
+
+    def add_string(self, target, hypo):
+        self.cnt_str += 1
+        self.total_meteor_str += pymeteor.meteor(target, hypo)
+
+    def add_tok(self, target_tok, hypo_tok):
+        self.cnt_tok += 1
+        self.total_meteor_tok += pymeteor.meteor(self.to_string(target_tok), self.to_string(hypo_tok))
+
+    def score_str(self):
+        return '{:.4f}'.format(100 * self.total_meteor_str / self.cnt_str)
+
+    def score_tok(self):
+        return '{:.4f}'.format(100 * self.total_meteor_tok / self.cnt_tok)
 
 def main(cfg: DictConfig):
 
@@ -190,6 +215,7 @@ def _main(cfg: DictConfig, output_file):
             default_log_format=("tqdm" if not cfg.common.no_progress_bar else "simple"),
         )
         scorer = scoring.build_scorer(cfg.scoring, tgt_dict)
+        meteor_scorer = MeteorScorer()
 
         num_sentences = 0
         has_target = True
@@ -291,6 +317,9 @@ def _main(cfg: DictConfig, output_file):
                             scorer.add_string(target_str, detok_hypo_str)
                         else:
                             scorer.add(target_tokens, hypo_tokens)
+                        
+                        meteor_scorer.add_string(target_str, detok_hypo_str)
+                        meteor_scorer.add_tok(target_tokens, hypo_tokens)
 
             wps_meter.update(num_generated_tokens)
             progress.log({"wps": round(wps_meter.avg)})
@@ -300,8 +329,8 @@ def _main(cfg: DictConfig, output_file):
         if has_target:
 
             print(
-                "Generate {} with beam={}: {}".format(
-                    cfg.dataset.gen_subset, cfg.generation.beam, scorer.result_string()
+                "Generate {} with beam={}: {}, meteor_tok: {}, meteor_str: {}".format(
+                    cfg.dataset.gen_subset, cfg.generation.beam, scorer.result_string(), meteor_scorer.score_str(), meteor_scorer.score_tok()
                 ),
                 file=output_file,
             )
