@@ -24,31 +24,6 @@ from fairseq.logging.meters import StopwatchMeter, TimeMeter
 from omegaconf import DictConfig
 import pymeteor.pymeteor as pymeteor
 
-class MeteorScorer:
-    def __init__(self):
-        self.cnt_str = 0
-        self.total_meteor_str = 0.0
-
-        self.cnt_tok = 0
-        self.total_meteor_tok = 0.0
-
-    def to_string(self, tensor):
-        return ' '.join(map(lambda x: str(x), tensor.tolist()))
-
-    def add_string(self, target, hypo):
-        self.cnt_str += 1
-        self.total_meteor_str += pymeteor.meteor(target, hypo)
-
-    def add_tok(self, target_tok, hypo_tok):
-        self.cnt_tok += 1
-        self.total_meteor_tok += pymeteor.meteor(self.to_string(target_tok), self.to_string(hypo_tok))
-
-    def score_str(self):
-        return '{:.4f}'.format(100 * self.total_meteor_str / self.cnt_str)
-
-    def score_tok(self):
-        return '{:.4f}'.format(100 * self.total_meteor_tok / self.cnt_tok)
-
 def main(cfg: DictConfig):
 
     if isinstance(cfg, Namespace):
@@ -215,8 +190,8 @@ def _main(cfg: DictConfig, output_file):
             default_log_format=("tqdm" if not cfg.common.no_progress_bar else "simple"),
         )
         scorer = scoring.build_scorer(cfg.scoring, tgt_dict)
-        meteor_scorer = MeteorScorer()
-
+        target_list = []
+        hypo_list = []
         num_sentences = 0
         has_target = True
         wps_meter = TimeMeter()
@@ -313,24 +288,29 @@ def _main(cfg: DictConfig, output_file):
                             hypo_tokens = tgt_dict.encode_line(
                                 detok_hypo_str, add_if_not_exist=True
                             )
+                            target_list.append(target_str)
+                            hypo_list.append(detok_hypo_str)
                         if hasattr(scorer, "add_string"):
                             scorer.add_string(target_str, detok_hypo_str)
                         else:
                             scorer.add(target_tokens, hypo_tokens)
-                        
-                        meteor_scorer.add_string(target_str, detok_hypo_str)
-                        meteor_scorer.add_tok(target_tokens, hypo_tokens)
 
             wps_meter.update(num_generated_tokens)
             progress.log({"wps": round(wps_meter.avg)})
             num_sentences += (
                 sample["nsentences"] if "nsentences" in sample else sample["id"].numel()
             )
-        if has_target:
 
+        if has_target:
+            cnt = 1.0 * len(target_list)
+            meteor_score = 0.0
+            for u, v in zip(target_list, hypo_list):
+              meteor_score += pymeteor.meteor(u, v)
+
+            print("Meteor: {:.2f}".format(100*meteor_score/cnt))
             print(
-                "Generate {} with beam={}: {}, meteor_tok: {}, meteor_str: {}".format(
-                    cfg.dataset.gen_subset, cfg.generation.beam, scorer.result_string(), meteor_scorer.score_str(), meteor_scorer.score_tok()
+                "Generate {} with beam={}: {}".format(
+                    cfg.dataset.gen_subset, cfg.generation.beam, scorer.result_string()
                 ),
                 file=output_file,
             )
