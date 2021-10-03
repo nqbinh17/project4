@@ -169,24 +169,23 @@ def load_langpair_dataset(
         assert len(u) == len(v)
         src_edges.append(torch.LongTensor((u, v))) # TODO:
     del all_data
-    with open(graph_path + '.label', "r") as f:
-        label_list = f.readlines()
-    for data in label_list:
-        src_labels.append(data.replace('\n','').split())
-    del label_list
+    try:
+        with open(graph_path + '.label', "r") as f:
+            label_list = f.readlines()
+        for data in label_list:
+            src_labels.append(data.replace('\n','').split())
+        del label_list
+        logger.info(
+            "loaded {} examples from: {}".format(
+                len(src_labels), graph_path+'.label'))
+    except:
+        src_labels = None
+        logger.info(
+            "No label file: {}".format(graph_path+'.label'))
     logger.info(
             "loaded {} examples from: {}".format(
                 len(src_edges), graph_path+'.edge'))
-    logger.info(
-            "loaded {} examples from: {}".format(
-                len(src_labels), graph_path+'.label'))
     
-    src_line_edges = []
-    src_line_nodes = []
-    for size, edge, label in zip(src_dataset.sizes, src_edges, src_labels):
-        new_text, new_edge = Process2LineGraph(size, [edge[1].tolist(), edge[0].tolist()], label) #TODO:
-        src_line_nodes.append(new_text)
-        src_line_edges.append(torch.LongTensor(new_edge))
     # END YOUR CODE
     return LanguagePairDataset(
         src_dataset,
@@ -203,9 +202,7 @@ def load_langpair_dataset(
         shuffle=shuffle,
         pad_to_multiple=pad_to_multiple,
         src_edges = src_edges,
-        src_labels = src_labels,
-        src_line_edges = src_line_edges,
-        src_line_nodes = src_line_nodes
+        src_labels = src_labels
     )
 
 

@@ -31,7 +31,7 @@ from fairseq.modules import (
 from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
-from fairseq.my_graph.ucca import UCCALabel, LineUCCALabel
+from fairseq.my_graph.ucca import AutoLabel
 import copy
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
@@ -201,10 +201,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
         # START YOUR CODE
         parser.add_argument('--graph-type', type=str, metavar='STR',
                             help='graph module type e.g: GAT, Sage, normal')
-        parser.add_argument('--is-graph-outside', default=False, action='store_true',
-                            help='if true, graph encoder outside the Transformer')
-        parser.add_argument('--is-phrase-information', default=False, action='store_true',
-                            help='if true, using x_phrase information instead x_graph for cross-attention')
+        parser.add_argument('--label-type', type=str, metavar='STR',
+                            help='labe type e.g: UCCA, DEP')
         # END YOUR CODE
         # args for Fully Sharded Data Parallel (FSDP) training
         parser.add_argument(
@@ -313,8 +311,6 @@ class TransformerModel(FairseqEncoderDecoderModel):
         src_labels,
         src_selected_idx,
         src_node_idx,
-        src_line_nodes,
-        src_line_edges,
         # END YOUR CODE
         prev_output_tokens,
         return_all_hiddens: bool = True,
@@ -332,7 +328,6 @@ class TransformerModel(FairseqEncoderDecoderModel):
             src_tokens, src_lengths=src_lengths,
             src_edges = src_edges, src_labels= src_labels, 
             src_selected_idx = src_selected_idx, src_node_idx = src_node_idx, 
-            src_line_nodes = src_line_nodes, src_line_edges = src_line_edges,
             return_all_hiddens=return_all_hiddens
         )
         decoder_out = self.decoder(
@@ -428,9 +423,10 @@ class TransformerEncoder(FairseqEncoder):
         else:
             self.layer_norm = None
         # START YOUR CODE
-        self.line_ucca = LineUCCALabel()
-        self.label_embedding = nn.Embedding(self.line_ucca.length(), embed_dim, padding_idx = self.line_ucca.getPadIndex())
-        nn.init.normal_(self.label_embedding.weight, mean=0, std=embed_dim ** -0.5)
+        if args.label_type != None:
+            self.line_ucca = AutoLabel(args.label_type)
+            self.label_embedding = nn.Embedding(self.line_ucca.length(), embed_dim, padding_idx = self.line_ucca.getPadIndex())
+            nn.init.normal_(self.label_embedding.weight, mean=0, std=embed_dim ** -0.5)
         # END YOUR CODE
     def build_encoder_layer(self, args):
         layer = TransformerEncoderLayer(args)
@@ -484,8 +480,6 @@ class TransformerEncoder(FairseqEncoder):
         src_labels,
         src_selected_idx,
         src_node_idx,
-        src_line_nodes,
-        src_line_edges,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
@@ -517,7 +511,6 @@ class TransformerEncoder(FairseqEncoder):
             src_labels,
             src_selected_idx,
             src_node_idx, 
-            src_line_nodes, src_line_edges,
             return_all_hiddens, token_embeddings
             )
 
@@ -533,7 +526,6 @@ class TransformerEncoder(FairseqEncoder):
         src_labels,
         src_selected_idx,
         src_node_idx,
-        src_line_nodes, src_line_edges,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
@@ -566,9 +558,10 @@ class TransformerEncoder(FairseqEncoder):
         has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
         x, encoder_embedding, x_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
-        src_labels = self.label_embedding(src_labels)
-        src_labels = self.embed_scale * src_labels
-        src_labels = self.dropout_module(src_labels)
+        if src_labels:
+            src_labels = self.label_embedding(src_labels)
+            src_labels = self.embed_scale * src_labels
+            src_labels = self.dropout_module(src_labels)
               
         # account for padding while computing the representation
         # B x T x C -> T x B x C
