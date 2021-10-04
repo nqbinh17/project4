@@ -5,7 +5,8 @@ class AutoLabel:
     self.dep_labels = ['case', 'nsubj', 'npadvmod', 'intj', 'cc', 'auxpass', 'prt', 'pobj', 'dative', 
     'aux', 'acl', 'compound', 'oprd', 'advcl', 'xcomp', 'conj', 'ccomp', 'csubj', 'expl', 'preconj', 
     'agent', 'mark', 'nsubjpass', 'ROOT', 'poss', 'nummod', 'dobj', 'advmod', 'neg', 'acomp', 'prep',
-    'amod', 'predet', 'appos', 'punct', 'relcl', 'pcomp', 'nmod', 'attr', 'dep', 'det', 'parataxis', 'quantmod']
+    'amod', 'predet', 'appos', 'punct', 'relcl', 'pcomp', 'nmod', 'attr', 'dep', 'det', 'parataxis', 'quantmod',
+    "meta", "csubjpass"]
     self.ucca_labels = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'L', 'N', 'P', 'R', 'S', 'U']
     self.label_type = label_type
     self.labels = {"UCCA": self.ucca_labels, "DEP": self.dep_labels}

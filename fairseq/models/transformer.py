@@ -425,7 +425,7 @@ class TransformerEncoder(FairseqEncoder):
         # START YOUR CODE
         if getattr(args, "label_type", None):
             self.line_ucca = AutoLabel(args.label_type)
-            self.label_embedding = nn.Embedding(self.line_ucca.length(), embed_dim, padding_idx = self.line_ucca.getPadIndex())
+            self.label_embedding = nn.Embedding(self.line_ucca.length(), embed_dim)
             nn.init.normal_(self.label_embedding.weight, mean=0, std=embed_dim ** -0.5)
         # END YOUR CODE
     def build_encoder_layer(self, args):
