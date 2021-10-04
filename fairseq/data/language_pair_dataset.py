@@ -359,14 +359,14 @@ class LanguagePairDataset(FairseqDataset):
     # START CODE
     def get_selected_index(self):
         def selectIndexTensor(idx):
-            select = (idx[..., None] == self.graph_indices).any(-1)
+            select = ~(idx[..., None] == self.graph_indices).any(-1)
             position = torch.LongTensor(list(range(idx.size(0))))
             return position[select]
 
         return [selectIndexTensor(src) for src in self.src]
     def get_node_index(self):
         def nodeIndexTensor(idx):
-            select = ~(idx[..., None] == self.graph_indices).any(-1)
+            select = (idx[..., None] == self.graph_indices).any(-1)
             position = torch.LongTensor(list(range(idx.size(0))))
             return position[select]
         return [nodeIndexTensor(src) for src in self.src]
