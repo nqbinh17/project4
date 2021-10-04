@@ -350,7 +350,7 @@ class LanguagePairDataset(FairseqDataset):
         self.src_edges = src_edges
         self.auto_label = AutoLabel()
         self.src_labels = self.auto_label.Label2Seq(src_labels) if src_labels else None
-        self.graph_indices = torch.tensor(self.src_dict.graph_indices())
+        self.graph_indices = torch.tensor(self.src_dict.graph_indices)
         self.src_selected_idx = self.get_selected_index()
         self.src_node_idx = self.get_node_index()
         # END YOUR CODE

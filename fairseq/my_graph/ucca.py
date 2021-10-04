@@ -8,6 +8,7 @@ class AutoLabel:
     'amod', 'predet', 'appos', 'punct', 'relcl', 'pcomp', 'nmod', 'attr', 'dep', 'det', 'parataxis', 'quantmod']
     self.ucca_labels = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'L', 'N', 'P', 'R', 'S', 'U']
     self.label_type = label_type
+    self.labels = {"UCCA": self.ucca_labels, "DEP": self.dep_labels}
     self.label_dict = {} # total 13 labels
     self.setupDict()
 
@@ -16,6 +17,7 @@ class AutoLabel:
 
   def setupDict(self):
     if self.label_type != None:
+      self.labels = self.labels[self.label_type]
       for label in (self.labels):
         self.pushToDict(label)
 

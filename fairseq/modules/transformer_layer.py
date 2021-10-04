@@ -44,7 +44,8 @@ class TransformerEncoderLayer(nn.Module):
         )
 
          # START YOUR CODE
-         self.graph_norm = LayerNorm(self.embed_dim)
+        self.normalize_before = args.encoder_normalize_before
+        self.graph_norm = LayerNorm(self.embed_dim)
         self.ffn_norm = LayerNorm(self.embed_dim)
 
         self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = False)
