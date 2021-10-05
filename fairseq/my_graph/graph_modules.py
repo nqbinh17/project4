@@ -263,6 +263,7 @@ class GraphTransformer(MessagePassing):
         self.lin_skip = build_linear(self.in_channels, self.heads * self.out_channels, quant_noise, qn_block_size)
         self.lin_beta = build_linear(3 * self.heads * self.out_channels, self.heads * self.out_channels, quant_noise, qn_block_size)
         self.attention_qk = ScoreCollections(self.heads, self.out_channels, "Transformer")
+
     def forward(self, x, edge_index, edge_attr = None):
         x = (x, x)
         out = self.propagate(edge_index, x=x, edge_attr=edge_attr, size=None)
@@ -272,8 +273,8 @@ class GraphTransformer(MessagePassing):
         beta = self.lin_beta(torch.cat([out, x_r, out - x_r], dim=-1))
         beta = beta.sigmoid()
         out = beta * x_r + (1 - beta) * out
-        
         return out
+
     def message(self, x_i, x_j, edge_attr,
                 index, ptr=None,
                 size_i=None):
@@ -291,6 +292,7 @@ class GraphTransformer(MessagePassing):
             value += edge_attr
         out = value * alpha.view(-1, self.heads, 1)
         return out
+
 class EnhancedGraphTransformer(GraphTransformer):
     def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args,
                  heads: int = 1, isLabeled = True, **kwargs):

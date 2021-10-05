@@ -44,13 +44,23 @@ class TransformerEncoderLayer(nn.Module):
         )
 
          # START YOUR CODE
+        self.self_attn = self.build_self_attention(self.embed_dim, args)
+        self.self_attn_layer_norm = LayerNorm(self.embed_dim)
         self.normalize_before = args.encoder_normalize_before
         self.graph_norm = LayerNorm(self.embed_dim)
-        self.ffn_norm = LayerNorm(self.embed_dim)
-
-        self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = False)
+        self.ffn_norm = LayerNorm(self.embed_dim)      
+        self.word_graph_gated_residual = GatingResidual(self.embed_dim, self.quant_noise,
+            self.quant_noise_block_size, args)
+        isLabeled = True if getattr(args, "label_type", None) else False
+        self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, isLabeled = isLabeled)
         self.ffn = FeedForward(self.embed_dim, args.encoder_ffn_embed_dim, self.embed_dim, 
                                 self.quant_noise, self.quant_noise_block_size, args)
+
+        """
+        self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
+        self.gated_residual = GatingResidual(self.embed_dim, self.quant_noise,
+            self.quant_noise_block_size, args)
+        """
         # END YOUR CODE
 
     def residual_connection(self, x, residual):
@@ -69,6 +79,28 @@ class TransformerEncoderLayer(nn.Module):
                 if k in state_dict:
                     state_dict["{}.{}.{}".format(name, new, m)] = state_dict[k]
                     del state_dict[k]
+    # START YOUR CODE
+    def build_phrase_attention(self, embed_dim, args):
+        return MultiheadAttention(
+            embed_dim,
+            args.encoder_attention_heads,
+            kdim=self.embed_dim,
+            vdim=self.embed_dim,
+            dropout=args.attention_dropout,
+            self_attention=False,
+            q_noise=self.quant_noise,
+            qn_block_size=self.quant_noise_block_size,
+        )
+    # END YOUR CODE
+    def build_self_attention(self, embed_dim, args):
+        return MultiheadAttention(
+            embed_dim,
+            args.encoder_attention_heads,
+            dropout=args.attention_dropout,
+            self_attention=True,
+            q_noise=self.quant_noise,
+            qn_block_size=self.quant_noise_block_size,
+        )
 
     def forward(
         self, x, 
@@ -90,7 +122,26 @@ class TransformerEncoderLayer(nn.Module):
         Returns:
             encoded output of shape `(seq_len, batch, embed_dim)`
         """
-        # Graph Attention
+        if attn_mask is not None:
+            attn_mask = attn_mask.masked_fill(attn_mask.to(torch.bool), -1e8)
+
+        # START YOUR CODE    
+        residual = x
+        if self.normalize_before:
+            x = self.self_attn_layer_norm(x)
+        x, _ = self.self_attn(
+            query=x,
+            key=x,
+            value=x,
+            key_padding_mask=encoder_padding_mask,
+            attn_mask=attn_mask,
+        )
+        x = self.dropout_module(x)
+        x = self.residual_connection(x, residual)
+        if not self.normalize_before:
+            x = self.self_attn_layer_norm(x)
+        # START YOUR CODE
+
         residual = x_graph
         if self.normalize_before:
             x_graph = self.graph_norm(x_graph)
@@ -98,26 +149,25 @@ class TransformerEncoderLayer(nn.Module):
         x_graph, src_labels = self.graph_encode(x_graph, src_edges, src_labels)
         x_graph = self.dropout_module(x_graph)
         x_graph = self.residual_connection(x_graph, residual)
-
         if not self.normalize_before:
             x_graph = self.graph_norm(x_graph)
 
-        # FFN
-        residual = x_graph
-        if self.normalize_before:
-            x_graph = self.ffn_norm(x_graph)
-
-        x_graph = self.ffn(x_graph)
-        x_graph = self.dropout_module(x_graph)
-        x_graph = self.residual_connection(x_graph, residual)
-
-        if not self.normalize_before:
-            x_graph = self.ffn_norm(x_graph)
-
         batch, dim = x.size(1), x.size(2)
-        x = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
-        x += embed_pos
-        x = x.transpose(0, 1)
+        residual_graph = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
+        residual_graph += embed_pos
+        residual_graph = residual_graph.transpose(0, 1)
+
+        x = self.word_graph_gated_residual(x, residual_graph)
+        
+        # FFN
+        residual = x
+        if self.normalize_before:
+            x = self.ffn_norm(x)
+        x = self.ffn(x)
+        x = self.dropout_module(x)
+        x = self.residual_connection(x, residual)
+        if not self.normalize_before:
+            x = self.ffn_norm(x)
 
         return x, x_graph, src_labels
 
