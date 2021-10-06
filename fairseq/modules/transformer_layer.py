@@ -57,7 +57,7 @@ class TransformerEncoderLayer(nn.Module):
                                 self.quant_noise, self.quant_noise_block_size, args)
 
         #self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
-        self.combined_ffn = FeedForward(self.embed_dim, args.encoder_ffn_embed_dim, self.embed_dim, 
+        self.combined_ffn = FeedForward(2 * self.embed_dim, args.encoder_ffn_embed_dim, self.embed_dim, 
                                 self.quant_noise, self.quant_noise_block_size, args)
         # END YOUR CODE
 
