@@ -46,6 +46,8 @@ class TransformerEncoderLayer(nn.Module):
          # START YOUR CODE
         self.self_attn = self.build_self_attention(self.embed_dim, args)
         self.self_attn_layer_norm = LayerNorm(self.embed_dim)
+        self.gated_residual = GatingResidual(self.embed_dim, self.quant_noise,
+            self.quant_noise_block_size, args)
         self.normalize_before = args.encoder_normalize_before
         self.graph_norm = LayerNorm(self.embed_dim)
         self.ffn_norm = LayerNorm(self.embed_dim)      
@@ -158,7 +160,7 @@ class TransformerEncoderLayer(nn.Module):
         x_out = self.dropout_module(x_out)
         x = self.combined_ffn(torch.cat((x, x_out), dim=-1))
         x = self.dropout_module(x)
-        x = self.residual_connection(x, residual_graph)
+        x = self.gated_residual(x, residual_graph)
         x = self.self_attn_layer_norm(x)
         # FFN
         residual = x
