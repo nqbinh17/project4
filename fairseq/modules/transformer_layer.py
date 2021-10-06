@@ -139,35 +139,27 @@ class TransformerEncoderLayer(nn.Module):
         if not self.normalize_before:
             x = self.self_attn_layer_norm(x)
         # START YOUR CODE
-
-        residual = x_graph
-        if self.normalize_before:
-            x_graph = self.graph_norm(x_graph)
-
+        residual = x
+        batch, dim = x.size(1), x.size(2) 
         x_graph, src_labels = self.graph_encode(x_graph, src_edges, src_labels)
-        x_graph = self.dropout_module(x_graph)
-        x_graph = self.residual_connection(x_graph, residual)
-        if not self.normalize_before:
-            x_graph = self.graph_norm(x_graph)
-
-        batch, dim = x.size(1), x.size(2)
         residual_graph = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
         residual_graph += embed_pos
         residual_graph = residual_graph.transpose(0, 1)
-        # FFNN Combining
-        residual = x
-        if self.normalize_before:
-            x = self.self_attn_layer_norm(x)
+        residual_graph = self.dropout_module(residual_graph)
+        
         x = self.word_graph_gated_residual(x, residual_graph)
+        x = self.self_attn_layer_norm(x)
+
         x_out, _ = self.phrase_attn(
-                        query=x,
-                        key=residual_graph,
-                        value=residual_graph,
-                        key_padding_mask=encoder_padding_mask)
-        x = self.combined_ffn(torch.cat([x, x_out], dim = -1))
-        x = self.residual_connection(x, residual)
-        if not self.normalize_before:
-            x = self.self_attn_layer_norm(x)
+                    query=x,
+                    key=residual_graph,
+                    value=residual_graph,
+                    key_padding_mask=encoder_padding_mask)
+        x_out = self.dropout_module(x_out)
+        x = self.combined_ffn(torch.cat((x, x_out), dim=-1))
+        x = self.dropout_module(x)
+        x = self.residual_connection(x, residual_graph)
+        x = self.self_attn_layer_norm(x)
         # FFN
         residual = x
         if self.normalize_before:
