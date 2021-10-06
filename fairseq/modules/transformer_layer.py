@@ -56,11 +56,9 @@ class TransformerEncoderLayer(nn.Module):
         self.ffn = FeedForward(self.embed_dim, args.encoder_ffn_embed_dim, self.embed_dim, 
                                 self.quant_noise, self.quant_noise_block_size, args)
 
-        """
-        self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
-        self.gated_residual = GatingResidual(self.embed_dim, self.quant_noise,
-            self.quant_noise_block_size, args)
-        """
+        #self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
+        self.combined_ffn = FeedForward(self.embed_dim, args.encoder_ffn_embed_dim, self.embed_dim, 
+                                self.quant_noise, self.quant_noise_block_size, args)
         # END YOUR CODE
 
     def residual_connection(self, x, residual):
@@ -156,9 +154,16 @@ class TransformerEncoderLayer(nn.Module):
         residual_graph = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
         residual_graph += embed_pos
         residual_graph = residual_graph.transpose(0, 1)
-
+        # FFNN Combining
+        residual = x
+        if self.normalize_before:
+            x = self.self_attn_layer_norm(x)
         x = self.word_graph_gated_residual(x, residual_graph)
         
+        x = self.combined_ffn(torch.cat([x, residual], dim = -1))
+        x = self.residual_connection(x, residual)
+        if not self.normalize_before:
+            x = self.self_attn_layer_norm(x)
         # FFN
         residual = x
         if self.normalize_before:
