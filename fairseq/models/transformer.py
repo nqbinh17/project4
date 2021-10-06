@@ -558,7 +558,7 @@ class TransformerEncoder(FairseqEncoder):
         has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
         x, encoder_embedding, x_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
-        if src_labels:
+        if type(src_labels) != type(None):
             src_labels = self.label_embedding(src_labels)
             src_labels = self.embed_scale * src_labels
             src_labels = self.dropout_module(src_labels)

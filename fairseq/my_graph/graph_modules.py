@@ -369,8 +369,9 @@ class UCCAEncoder(nn.Module):
                 self.convs.append(Model(*settings))
         else:
             self.convs = Model(*settings)
-        self.convs_layer_norm = LayerNorm(self.in_dim)
+        
         if self.isLabeled != None:
+            self.convs_layer_norm = LayerNorm(self.in_dim)
             self.lin_label = build_linear(self.in_dim, self.in_dim, self.quant_noise, self.quant_noise_block_size, False)
 
     def residual_connection(self, x, residual):

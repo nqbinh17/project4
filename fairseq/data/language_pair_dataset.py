@@ -142,9 +142,7 @@ def collate(
     
     "1. Process for src_labels"
     src_labels = None
-    try:
-        samples[0]['src_labels'] == None
-    except:
+    if type(samples[0]['src_labels']) != type(None):
         for s in sort_order:
             l = samples[s]['src_labels']
             if src_labels == None:
