@@ -56,7 +56,7 @@ class TransformerEncoderLayer(nn.Module):
         self.ffn = FeedForward(self.embed_dim, args.encoder_ffn_embed_dim, self.embed_dim, 
                                 self.quant_noise, self.quant_noise_block_size, args)
 
-        #self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
+        self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
         self.combined_ffn = FeedForward(2 * self.embed_dim, args.encoder_ffn_embed_dim, self.embed_dim, 
                                 self.quant_noise, self.quant_noise_block_size, args)
         # END YOUR CODE
@@ -159,8 +159,12 @@ class TransformerEncoderLayer(nn.Module):
         if self.normalize_before:
             x = self.self_attn_layer_norm(x)
         x = self.word_graph_gated_residual(x, residual_graph)
-        
-        x = self.combined_ffn(torch.cat([x, residual], dim = -1))
+        x_out, _ = self.phrase_attn(
+                        query=x,
+                        key=residual_graph,
+                        value=residual_graph,
+                        key_padding_mask=encoder_padding_mask)
+        x = self.combined_ffn(torch.cat([x, x_out], dim = -1))
         x = self.residual_connection(x, residual)
         if not self.normalize_before:
             x = self.self_attn_layer_norm(x)
