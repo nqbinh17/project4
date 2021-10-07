@@ -31,7 +31,7 @@ from fairseq.modules import (
 from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
-from fairseq.my_graph.ucca import UCCALabel, LineUCCALabel
+from fairseq.my_graph.ucca import AutoLabel, LineUCCALabel
 import copy
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024

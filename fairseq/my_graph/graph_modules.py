@@ -356,7 +356,7 @@ class UCCAEncoder(nn.Module):
         elif graph_type == "EnhancedGraphTransformer":
             Model = EnhancedGraphTransformer
             head_dim = hidden_dim // self.num_heads
-            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, 8, self.isLabeled)
+            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, self.num_heads, self.isLabeled)
         else:
             Model = EdgeConv
             settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args)
