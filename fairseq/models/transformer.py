@@ -565,7 +565,7 @@ class TransformerEncoder(FairseqEncoder):
         src_labels = self.label_embedding(src_labels)
         src_labels = self.embed_scale * src_labels
         src_labels = self.dropout_module(src_labels)
-              
+    
         # account for padding while computing the representation
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
