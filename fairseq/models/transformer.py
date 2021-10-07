@@ -201,7 +201,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
         # START YOUR CODE
         parser.add_argument('--graph-type', type=str, metavar='STR',
                             help='graph module type e.g: GAT, Sage, normal')
-
+        parser.add_argument('--label-type', type=str, metavar='STR',
+                            help='labe type e.g: UCCA, DEP')
         # END YOUR CODE
         # args for Fully Sharded Data Parallel (FSDP) training
         parser.add_argument(
@@ -425,8 +426,10 @@ class TransformerEncoder(FairseqEncoder):
         else:
             self.layer_norm = None
         # START YOUR CODE
-        self.label_embedding = nn.Embedding(13, embed_dim)
-        nn.init.normal_(self.label_embedding.weight, mean=0, std=embed_dim ** -0.5)
+        if getattr(args, "label_type", None):
+            self.line_ucca = AutoLabel(args.label_type)
+            self.label_embedding = nn.Embedding(self.line_ucca.length(), embed_dim)
+            nn.init.normal_(self.label_embedding.weight, mean=0, std=embed_dim ** -0.5)
         # END YOUR CODE
     def build_encoder_layer(self, args):
         layer = TransformerEncoderLayer(args)

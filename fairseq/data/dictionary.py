@@ -36,7 +36,10 @@ class Dictionary:
         self.eos_index = self.add_symbol(eos)
         self.unk_index = self.add_symbol(unk)
         # START YOUR CODE
-        self.intnode_index = self.add_symbol("IntNode")
+        self.graph_list = ['IntNode', 'ROOT']
+        self.graph_indices = []
+        for s in self.graph_list:
+            self.graph_indices.append(self.add_symbol(s))
         # END YOUR CODE
         if extra_special_symbols:
             for s in extra_special_symbols:
@@ -202,8 +205,8 @@ class Dictionary:
         """Helper to get index of beginning-of-sentence symbol"""
         return self.bos_index
     # START YOUR CODE
-    def intnode(self):
-        return self.intnode_index
+    def graph_indices(self):
+        return self.graph_indices
     # END YOUR CODE
     def pad(self):
         """Helper to get index of pad symbol"""

@@ -8,7 +8,7 @@ import logging
 import numpy as np
 import torch
 from fairseq.data import FairseqDataset, data_utils
-from fairseq.my_graph.ucca import UCCALabel, LineUCCALabel 
+from fairseq.my_graph.ucca import AutoLabel, LineUCCALabel 
 
 logger = logging.getLogger(__name__)
 
@@ -388,9 +388,9 @@ class LanguagePairDataset(FairseqDataset):
         self.pad_to_multiple = pad_to_multiple
         # START YOUR CODE
         self.src_edges = src_edges
-        self.ucca = UCCALabel()
+        self.ucca = AutoLabel()
         self.src_labels = self.ucca.Label2Seq(src_labels)
-        self.intnode_index = self.src_dict.intnode()
+        self.graph_indices = torch.tensor(self.src_dict.graph_indices)
         self.src_selected_idx = self.get_selected_index()
         self.src_node_idx = self.get_node_index()
         self.src_line_nodes = src_line_nodes
@@ -399,13 +399,13 @@ class LanguagePairDataset(FairseqDataset):
     # START CODE
     def get_selected_index(self):
         def selectIndexTensor(idx):
-            select = idx != self.intnode_index
+            select = ~(idx[..., None] == self.graph_indices).any(-1)
             position = torch.LongTensor(list(range(idx.size(0))))
             return position[select]
         return [selectIndexTensor(src) for src in self.src]
     def get_node_index(self):
         def nodeIndexTensor(idx):
-            select = idx == self.intnode_index
+            select = (idx[..., None] == self.graph_indices).any(-1)
             position = torch.LongTensor(list(range(idx.size(0))))
             return position[select]
         return [nodeIndexTensor(src) for src in self.src]
