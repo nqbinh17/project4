@@ -143,14 +143,14 @@ def collate(
     
     "1. Process for src_labels"
     src_labels = None
-    
-    for s in sort_order:
-        l = samples[s]['src_labels']
-        if src_labels == None:
-            src_labels = l
-        else:
-            src_labels = torch.cat([src_labels, l], dim = 0) # shape = [Labels]
-    assert src_edges.size(1) == src_labels.size(0)
+    if type(samples[0]['src_labels']) != type(None):
+        for s in sort_order:
+            l = samples[s]['src_labels']
+            if src_labels == None:
+                src_labels = l
+            else:
+                src_labels = torch.cat([src_labels, l], dim = 0) # shape = [Labels]
+        assert src_edges.size(1) == src_labels.size(0)
 
 
     
@@ -354,7 +354,7 @@ class LanguagePairDataset(FairseqDataset):
         # START YOUR CODE
         self.src_edges = src_edges
         self.ucca = AutoLabel()
-        self.src_labels = self.ucca.Label2Seq(src_labels)
+        self.src_labels = self.ucca.Label2Seq(src_labels) if src_labels else None
         self.graph_indices = torch.tensor(self.src_dict.graph_indices)
         self.src_selected_idx = self.get_selected_index()
         self.src_node_idx = self.get_node_index()
@@ -410,7 +410,7 @@ class LanguagePairDataset(FairseqDataset):
             "source": src_item,
             "target": tgt_item,
             "src_edges": self.src_edges[index],
-            "src_labels": self.src_labels[index],
+            "src_labels": self.src_labels[index] if self.src_labels else None,
             "src_selected_idx": self.src_selected_idx[index],
             "src_node_idx": self.src_node_idx[index],
             "src_line_nodes": None,

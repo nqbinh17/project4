@@ -67,9 +67,10 @@ class TransformerEncoderLayer(nn.Module):
             self.quant_noise_block_size,
         )
          # START YOUR CODE
+        self.use_label = True if getattr(args, "label_type", None) else False
         self.final_layer_norm = LayerNorm(self.embed_dim)
 
-        self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
+        self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, use_label = self.use_label)
         self.gated_residual = GatingResidual(self.embed_dim, self.quant_noise,
             self.quant_noise_block_size, args)
         self.word_graph_gated_residual = GatingResidual(self.embed_dim, self.quant_noise,

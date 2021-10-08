@@ -36,10 +36,14 @@ class Dictionary:
         self.eos_index = self.add_symbol(eos)
         self.unk_index = self.add_symbol(unk)
         # START YOUR CODE
+        self.cons_node = ['NAC', 'RRC', 'WP$', 'NFP', 'FW', 'UCP', 'CD', 'VB', 'VBP', 'ADJP', 'IN', 'JJ', 'POS', 'WRB', 'X', '$', 'VBZ', 'EX', 'JJS', '``', 'WP', 'JJR', 'HYPH', ',', 'MD', ':', 'WHADVP', '.', 'WDT', '-RRB-', 'CONJP', 'VBD', 'CC', 'SINV', 'SYM', 'RP', "''", 'SQ', 'WHNP', 'RB', 'PRP$', 'RBR', 'UH', 'SBAR', 'WHADJP', 'RBS', 'ADVP', 'PP', 'FRAG', 'VP', 'NNPS', 'VBN', 'WHPP', 'PDT', 'TO', '_SP', '-LRB-', 'NNS', 'LS', 'PRN', 'SBARQ', 'NN', 'NP', 'NML', 'INTJ', 'NNP', 'QP', 'S', 'VBG', 'PRP', 'DT', 'LST', 'PRT']
         self.graph_list = ['IntNode', 'ROOT']
         self.graph_indices = []
         for s in self.graph_list:
             self.graph_indices.append(self.add_symbol(s))
+        for s in self.cons_node:
+            # There are some nodes such as "` , : ``" so add $ in front.
+            self.graph_indices.append(self.add_symbol("$"+s))
         # END YOUR CODE
         if extra_special_symbols:
             for s in extra_special_symbols:

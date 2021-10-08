@@ -426,7 +426,9 @@ class TransformerEncoder(FairseqEncoder):
         else:
             self.layer_norm = None
         # START YOUR CODE
+        self.use_label = False
         if getattr(args, "label_type", None):
+            self.use_label = True
             self.line_ucca = AutoLabel(args.label_type)
             self.label_embedding = nn.Embedding(self.line_ucca.length(), embed_dim)
             nn.init.normal_(self.label_embedding.weight, mean=0, std=embed_dim ** -0.5)
@@ -565,10 +567,12 @@ class TransformerEncoder(FairseqEncoder):
         has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
         x, encoder_embedding, x_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
-        src_labels = self.label_embedding(src_labels)
-        src_labels = self.embed_scale * src_labels
-        src_labels = self.dropout_module(src_labels)
-    
+        if self.use_label == True:
+            src_labels = self.label_embedding(src_labels)
+            src_labels = self.embed_scale * src_labels
+            src_labels = self.dropout_module(src_labels)
+        else:
+            src_labels = None
         # account for padding while computing the representation
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)

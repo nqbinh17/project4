@@ -244,7 +244,7 @@ class GAT(MessagePassing):
 
 class GraphTransformer(MessagePassing):
     def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args,
-                 heads: int = 1, isLabeled = True, **kwargs):
+                 heads: int = 1, use_label = True, **kwargs):
         kwargs.setdefault('aggr', 'add')
         super(GraphTransformer, self).__init__(node_dim=0, **kwargs)
 
@@ -293,9 +293,9 @@ class GraphTransformer(MessagePassing):
         return out
 class EnhancedGraphTransformer(GraphTransformer):
     def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args,
-                 heads: int = 1, isLabeled = True, **kwargs):
+                 heads: int = 1, use_label = True, **kwargs):
         super(EnhancedGraphTransformer, self).__init__(in_channels, out_channels, quant_noise, qn_block_size, args,
-                 heads, isLabeled, **kwargs)
+                 heads, use_label, **kwargs)
 
         self.lin_enhanced_value = build_linear(self.out_channels, self.out_channels, quant_noise, qn_block_size, False)
         self.gating_query_value = GatingResidual(self.out_channels, quant_noise, qn_block_size, args)
@@ -328,7 +328,7 @@ class EnhancedGraphTransformer(GraphTransformer):
         return out
 
 class UCCAEncoder(nn.Module):
-    def __init__(self, in_dim, hidden_dim, out_dim, args, layers=1, isLabeled = True):
+    def __init__(self, in_dim, hidden_dim, out_dim, args, layers=1, use_label = True):
         super(UCCAEncoder, self).__init__()
         
         self.in_dim = in_dim
@@ -337,7 +337,7 @@ class UCCAEncoder(nn.Module):
         self.quant_noise = getattr(args, 'quant_noise_pq', 0)
         self.quant_noise_block_size = getattr(args, 'quant_noise_pq_block_size', 8) or 8
         self.num_layers = 3 # hard-code
-        self.isLabeled = isLabeled
+        self.use_label = use_label
         self.num_heads = args.encoder_attention_heads
         self.dropout_module = FairseqDropout(
             args.dropout, module_name=self.__class__.__name__
@@ -352,11 +352,11 @@ class UCCAEncoder(nn.Module):
         elif graph_type == "GraphTransformer":
             Model = GraphTransformer
             head_dim = hidden_dim // self.num_heads
-            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, self.num_heads, self.isLabeled)
+            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, self.num_heads, self.use_label)
         elif graph_type == "EnhancedGraphTransformer":
             Model = EnhancedGraphTransformer
             head_dim = hidden_dim // self.num_heads
-            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, self.num_heads, self.isLabeled)
+            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, self.num_heads, self.use_label)
         else:
             Model = EdgeConv
             settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args)
@@ -368,14 +368,14 @@ class UCCAEncoder(nn.Module):
         else:
             self.convs = Model(*settings)
         self.convs_layer_norm = LayerNorm(self.in_dim)
-        if self.isLabeled != None:
+        if self.use_label != None:
             self.lin_label = build_linear(self.in_dim, self.in_dim, self.quant_noise, self.quant_noise_block_size, False)
 
     def residual_connection(self, x, residual):
         return residual + x
     def forward(self, x, edge_index, x_label = None):
         if self.layers == 1:
-            if self.isLabeled == True:
+            if self.use_label == True:
                 x_label = self.convs_layer_norm(x_label)
                 x_label = self.lin_label(x_label)
                 x_label = self.dropout_module(x_label)
