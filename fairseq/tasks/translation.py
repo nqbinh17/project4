@@ -182,17 +182,12 @@ def load_langpair_dataset(
         src_labels = None
         logger.info(
             "No label file: {}".format(graph_path+'.label'))
-            
+
     logger.info(
             "loaded {} examples from: {}".format(
-                len(src_labels), graph_path+'.label'))
+                len(src_edges), graph_path+'.edge'))
     
-    src_line_edges = []
-    src_line_nodes = []
-    for size, edge, label in zip(src_dataset.sizes, src_edges, src_labels):
-        new_text, new_edge = Process2LineGraph(size, [edge[1].tolist(), edge[0].tolist()], label) #TODO:
-        src_line_nodes.append(new_text)
-        src_line_edges.append(torch.LongTensor(new_edge))
+
     # END YOUR CODE
     return LanguagePairDataset(
         src_dataset,
@@ -210,8 +205,8 @@ def load_langpair_dataset(
         pad_to_multiple=pad_to_multiple,
         src_edges = src_edges,
         src_labels = src_labels,
-        src_line_edges = src_line_edges,
-        src_line_nodes = src_line_nodes
+        src_line_edges = None,
+        src_line_nodes = None
     )
 
 
