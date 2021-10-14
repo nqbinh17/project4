@@ -25,6 +25,7 @@ def build_linear(input_dim, output_dim, q_noise, qn_block_size, bias=True):
         )
     init_weights(linear)
     return linear
+
 class FeedForward(nn.Module):
     def __init__(self, in_dim, hidden_dim, out_dim, quant_noise, qn_block_size, args, activation=None):
         super().__init__()
@@ -215,9 +216,11 @@ class GAT(MessagePassing):
         if bias:
             nn.init.zeros_(self.bias)
         self.ffn = FeedForward(self.out_channels, 2048, self.out_channels, quant_noise, qn_block_size, args)
+
     def forward(self, x, edge_index, x_label, size=None):
         x = self.lin(x)
         return self.propagate(edge_index, size=size, x=x, edge_attr=x_label)
+
     def message(self, edge_index_i, x_i, x_j, size_i, edge_attr):
         x_i += edge_attr
         x_i = x_i.view(-1, self.heads, self.head_dim)
@@ -353,24 +356,43 @@ class GNNML1(MessagePassing):
             return x_j
         return norm.view(-1, 1) * x_j
 
-class GNNML3(MessagePassing):
-    def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args, use_label = True, **kwargs):
+class GNNML1b(MessagePassing):
+    def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args, heads, **kwargs):
         kwargs.setdefault('aggr', 'add')
-        super(GNNML3, self).__init__(node_dim=0, **kwargs)
+        super(GNNML1b, self).__init__(node_dim=0, **kwargs)
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.use_label = use_label
+        self.heads = heads
+        assert self.in_channels % self.heads == 0
+        self.head_dim = self.in_channels // self.heads
+        self.attention = ScoreCollections(self.heads, self.out_channels, "Transformer")
+        self.attn_dropout = FairseqDropout(args.attention_dropout, module_name=self.__class__.__name__)
         
-        self.gnnml1 = GNNML1(self.in_channels, self.out_channels, quant_noise, qn_block_size, args, use_label)
-        self.fc_out = build_linear(2 * self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         self.fc1 = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         self.fc2 = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
-
+        self.fc_aggr = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+        self.fc_skip = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+        self.fc_beta = build_linear(3 * self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+        
     def forward(self, x, edge_index, edge_attr = None):
-        out = self.gnnml1(x, edge_index, edge_attr)
-        x = torch.cat([out, self.fc1(x) * self.fc2(x)], 1)
+        aggr = self.propagate(edge_index, x = self.fc_aggr(x))
+        x_skip = self.fc_skip(x)
+        beta = self.fc_beta(torch.cat([x_skip, aggr, self.fc1(x) * self.fc2(x)], dim = -1))
+        beta = beta.sigmoid()
+        x = beta * aggr + (1 - beta) * x_skip
         return x
 
+    def message(self, x_i, x_j, index, edge_attr = None,
+                size_i = None, ptr = None):
+        if type(edge_attr) != type(None):
+            x_i += edge_attr
+        x_i = x_i.view(-1, self.heads, self.head_dim)
+        x_j = x_j.view(-1, self.heads, self.head_dim)
+        alpha = self.attention(x_i * x_j, index, size_i)
+        alpha = self.attn_dropout(alpha)
+
+        edge_features = x_j * alpha.view(-1, self.heads, 1)
+        return edge_features.view(-1, self.heads * self.head_dim)
 
 class UCCAEncoder(nn.Module):
     def __init__(self, in_dim, hidden_dim, out_dim, args, layers=1, use_label = True):
@@ -405,12 +427,9 @@ class UCCAEncoder(nn.Module):
         elif graph_type == "GNNML1":
             Model = GNNML1
             settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args, self.use_label)
-        elif graph_type == "GNNML3":
-            Model = GNNML3
-            settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args, self.use_label)
         else:
-            Model = EdgeConv
-            settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args)
+            print("We don't support Graph Module: ", graph_type)
+            a = b
         self.layers = layers
         if self.layers > 1:
             self.convs = nn.ModuleList()
