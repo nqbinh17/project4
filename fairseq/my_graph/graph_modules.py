@@ -353,6 +353,25 @@ class GNNML1(MessagePassing):
             return x_j
         return norm.view(-1, 1) * x_j
 
+class GNNML3(MessagePassing):
+    def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args, use_label = True, **kwargs):
+        kwargs.setdefault('aggr', 'add')
+        super(GNNML3, self).__init__(node_dim=0, **kwargs)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.use_label = use_label
+        
+        self.gnnml1 = GNNML1(self.in_channels, self.out_channels, quant_noise, qn_block_size, args, use_label)
+        self.fc_out = build_linear(2 * self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+        self.fc1 = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+        self.fc2 = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+
+    def forward(self, x, edge_index, edge_attr = None):
+        out = self.gnnml1(x, edge_index, edge_attr)
+        x = torch.cat([out, self.fc1(x) * self.fc2(x)], 1)
+        return x
+
+
 class UCCAEncoder(nn.Module):
     def __init__(self, in_dim, hidden_dim, out_dim, args, layers=1, use_label = True):
         super(UCCAEncoder, self).__init__()
@@ -385,6 +404,9 @@ class UCCAEncoder(nn.Module):
             settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, 8, self.use_label)
         elif graph_type == "GNNML1":
             Model = GNNML1
+            settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args, self.use_label)
+        elif graph_type == "GNNML3":
+            Model = GNNML3
             settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args, self.use_label)
         else:
             Model = EdgeConv
