@@ -357,7 +357,7 @@ class GNNML1(MessagePassing):
         return norm.view(-1, 1) * x_j
 
 class GNNML1b(MessagePassing):
-    def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args, heads, **kwargs):
+    def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args, heads = 8, **kwargs):
         kwargs.setdefault('aggr', 'add')
         super(GNNML1b, self).__init__(node_dim=0, **kwargs)
         self.in_channels = in_channels
@@ -427,6 +427,9 @@ class UCCAEncoder(nn.Module):
         elif graph_type == "GNNML1":
             Model = GNNML1
             settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args, self.use_label)
+        elif graph_type == "GNNML1b":
+            Model = GNNML1b
+            settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args, self.num_heads)
         else:
             print("We don't support Graph Module: ", graph_type)
             a = b

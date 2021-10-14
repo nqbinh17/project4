@@ -428,9 +428,11 @@ class TransformerEncoder(FairseqEncoder):
         else:
             self.layer_norm = None
         # START YOUR CODE
+        """
         self.line_ucca = LineUCCALabel()
         self.label_embedding = nn.Embedding(self.line_ucca.length(), embed_dim, padding_idx = self.line_ucca.getPadIndex())
         nn.init.normal_(self.label_embedding.weight, mean=0, std=embed_dim ** -0.5)
+        """
         # END YOUR CODE
     def build_encoder_layer(self, args):
         layer = TransformerEncoderLayer(args)
