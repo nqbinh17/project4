@@ -372,14 +372,11 @@ class GNNML1b(MessagePassing):
         self.fc2 = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         self.fc_aggr = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         self.fc_skip = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
-        self.fc_beta = build_linear(3 * self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         
     def forward(self, x, edge_index, edge_attr = None):
         aggr = self.propagate(edge_index, x = self.fc_aggr(x))
         x_skip = self.fc_skip(x)
-        beta = self.fc_beta(torch.cat([x_skip, aggr, self.fc1(x) * self.fc2(x)], dim = -1))
-        beta = beta.sigmoid()
-        x = beta * aggr + (1 - beta) * x_skip
+        x = x_skip + aggr + self.fc1(x) * self.fc2(x)
         return x
 
     def message(self, x_i, x_j, index, edge_attr = None,
@@ -390,7 +387,6 @@ class GNNML1b(MessagePassing):
         x_j = x_j.view(-1, self.heads, self.head_dim)
         alpha = self.attention(x_i * x_j, index, size_i)
         alpha = self.attn_dropout(alpha)
-
         edge_features = x_j * alpha.view(-1, self.heads, 1)
         return edge_features.view(-1, self.heads * self.head_dim)
 
@@ -441,7 +437,7 @@ class UCCAEncoder(nn.Module):
         else:
             self.convs = Model(*settings)
         self.convs_layer_norm = LayerNorm(self.in_dim)
-        if self.use_label != None:
+        if self.use_label == True:
             self.lin_label = build_linear(self.in_dim, self.in_dim, self.quant_noise, self.quant_noise_block_size, False)
 
     def residual_connection(self, x, residual):

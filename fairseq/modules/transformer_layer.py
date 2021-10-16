@@ -53,18 +53,10 @@ class TransformerEncoderLayer(nn.Module):
         )
         self.normalize_before = args.encoder_normalize_before
         # START YOUR CODE
-        "Initiate 6 LayerNorm"
-        #self.self_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
-        #self.x_graph_norm = LayerNorm(self.embed_dim)
         self.x_line_graph_norm = LayerNorm(self.embed_dim)
         self.ffn_norm = LayerNorm(self.embed_dim)
-        "Initiate 2 Graph Modules"
-        #self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
-        self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, use_label = False)
-        "Initiate 2 Attention Layer"
-        #self.self_attn = self.build_self_attention(self.embed_dim, args)
 
-        "Initiate 1 Feedforward"
+        self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, use_label = False)
         self.ffn = FeedForward(self.embed_dim, args.encoder_ffn_embed_dim, self.embed_dim, 
                                 self.quant_noise, self.quant_noise_block_size, args)
         # END YOUR CODE

@@ -189,6 +189,27 @@ def collate(
       else:
         src_line_edges = torch.cat([src_line_edges, r], dim = 1) # shape = [2, Edges]
     assert src_line_nodes.size(0) == src_line_edges.size(1)
+
+    # Process src_subgraphs
+    def tensorEdges(data, item):
+        i, [order, e] = data
+        edge = samples[order][item] + e # move idx to the right, since padding to the left
+        edge = edge + i * seq_len
+        return edge
+
+    src_subgraphs = {}
+    item = "src_subgraphs"
+    num_layer = len(samples[0][item"])
+    string = "src_graph"
+    for i, (order, extra) in enumerate(zip(sort_order, extra_length)):
+        for n in range(num_layer):
+            s = string + str(n+1) # src_graph1, 2, 3
+            edge = samples[order][item][n] + extra
+            edge = edge + i * seq_len
+            if s in src_subgraphs:
+                src_subgraphs[s] = torch.cat([src_subgraphs[s], edge], dim = 1)
+            else:
+                src_subgraphs[s] = edge
     # END YOUR CODE
     batch = {
         "id": id,
@@ -202,10 +223,16 @@ def collate(
             "src_selected_idx": src_selected_idx,
             "src_node_idx": src_node_idx,
             "src_line_nodes": src_line_nodes,
-            "src_line_edges": src_line_edges
+            "src_line_edges": src_line_edges,
+            "src_subgraphs": src_subgraphs
         },
         "target": target,
     }
+    # START CODE
+    #for i in range(num_layer):
+    #    s = string + str(i+1)
+    #    batch[net_input][s] = src_subgraphs[s]
+    # END CODE
     if prev_output_tokens is not None:
         batch["net_input"]["prev_output_tokens"] = prev_output_tokens.index_select(
             0, sort_order
@@ -314,7 +341,8 @@ class LanguagePairDataset(FairseqDataset):
         src_edges = None,
         src_labels = None,
         src_line_edges = None,
-        src_line_nodes = None
+        src_line_nodes = None,
+        src_subgraphs = None
     ):
         if tgt_dict is not None:
             assert src_dict.pad() == tgt_dict.pad()
@@ -395,6 +423,7 @@ class LanguagePairDataset(FairseqDataset):
         self.src_node_idx = self.get_node_index()
         self.src_line_nodes = src_line_nodes
         self.src_line_edges = src_line_edges
+        self.src_subgraphs = src_subgraphs
         # END YOUR CODE
     # START CODE
     def get_selected_index(self):

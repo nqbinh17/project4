@@ -29,6 +29,7 @@ from fairseq.data.indexed_dataset import get_available_dataset_impl
 from fairseq.dataclass import ChoiceEnum, FairseqDataclass
 from fairseq.tasks import FairseqTask, register_task
 from fairseq.preprocess_graph.line_graph import Process2LineGraph
+from fairseq.preprocess_graph.subgraph_cnt import subgraph_edges
 
 EVAL_BLEU_ORDER = 4
 
@@ -183,10 +184,14 @@ def load_langpair_dataset(
     
     src_line_edges = []
     src_line_nodes = []
+    src_subgraphs = []
     for size, edge, label in zip(src_dataset.sizes, src_edges, src_labels):
         new_text, new_edge = Process2LineGraph(size, [edge[1].tolist(), edge[0].tolist()], label) #TODO:
         src_line_nodes.append(new_text)
         src_line_edges.append(torch.LongTensor(new_edge))
+        subgraph_sparse_matrices = subgraph_edges(new_edge, 6)
+        src_subgraphs.append(src_subgraphs)
+
     # END YOUR CODE
     return LanguagePairDataset(
         src_dataset,
@@ -205,7 +210,8 @@ def load_langpair_dataset(
         src_edges = src_edges,
         src_labels = src_labels,
         src_line_edges = src_line_edges,
-        src_line_nodes = src_line_nodes
+        src_line_nodes = src_line_nodes,
+        src_subgraphs = src_subgraphs,
     )
 
 

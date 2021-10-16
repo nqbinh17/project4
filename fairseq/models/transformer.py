@@ -315,6 +315,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
         src_node_idx,
         src_line_nodes,
         src_line_edges,
+        src_subgraphs,
         # END YOUR CODE
         prev_output_tokens,
         return_all_hiddens: bool = True,
@@ -333,6 +334,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
             src_edges = src_edges, src_labels= src_labels, 
             src_selected_idx = src_selected_idx, src_node_idx = src_node_idx, 
             src_line_nodes = src_line_nodes, src_line_edges = src_line_edges,
+            src_subgraphs = src_subgraphs,
             return_all_hiddens=return_all_hiddens
         )
         decoder_out = self.decoder(
@@ -488,6 +490,7 @@ class TransformerEncoder(FairseqEncoder):
         src_node_idx,
         src_line_nodes,
         src_line_edges,
+        src_subgraphs,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
@@ -520,6 +523,7 @@ class TransformerEncoder(FairseqEncoder):
             src_selected_idx,
             src_node_idx, 
             src_line_nodes, src_line_edges,
+            src_subgraphs,
             return_all_hiddens, token_embeddings
             )
 
@@ -536,6 +540,7 @@ class TransformerEncoder(FairseqEncoder):
         src_selected_idx,
         src_node_idx,
         src_line_nodes, src_line_edges,
+        src_subgraphs,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
@@ -578,6 +583,8 @@ class TransformerEncoder(FairseqEncoder):
         if return_all_hiddens:
             encoder_states.append(x)
 
+        print("src_subgraphs", src_subgraphs)
+        a = b
         # encoder layers
         for layer in self.layers:
             x, x_line_graph = layer(x, src_selected_idx, src_node_idx, embed_pos,
