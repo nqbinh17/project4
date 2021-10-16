@@ -191,19 +191,14 @@ def collate(
     assert src_line_nodes.size(0) == src_line_edges.size(1)
 
     # Process src_subgraphs
-    def tensorEdges(data, item):
-        i, [order, e] = data
-        edge = samples[order][item] + e # move idx to the right, since padding to the left
-        edge = edge + i * seq_len
-        return edge
-
     src_subgraphs = {}
     item = "src_subgraphs"
-    num_layer = len(samples[0][item"])
+    num_layer = len(samples[0][item])
     string = "src_graph"
     for i, (order, extra) in enumerate(zip(sort_order, extra_length)):
         for n in range(num_layer):
             s = string + str(n+1) # src_graph1, 2, 3
+            print(samples[order][item][n])
             edge = samples[order][item][n] + extra
             edge = edge + i * seq_len
             if s in src_subgraphs:
@@ -478,7 +473,8 @@ class LanguagePairDataset(FairseqDataset):
             "src_selected_idx": self.src_selected_idx[index],
             "src_node_idx": self.src_node_idx[index],
             "src_line_nodes": self.src_line_nodes[index],
-            "src_line_edges": self.src_line_edges[index]
+            "src_line_edges": self.src_line_edges[index],
+            "src_subgraphs": self.src_subgraphs[index],
         }
         if self.align_dataset is not None:
             example["alignment"] = self.align_dataset[index]

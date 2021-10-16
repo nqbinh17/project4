@@ -1,3 +1,5 @@
+import torch
+
 def subgraph_edges(edges, num_layer):
   A = dense_matrix = edges_to_dense(edges)
   sparse_matrices = []
