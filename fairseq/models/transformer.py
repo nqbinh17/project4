@@ -583,12 +583,10 @@ class TransformerEncoder(FairseqEncoder):
         if return_all_hiddens:
             encoder_states.append(x)
 
-        print("src_subgraphs", src_subgraphs)
-        a = b
         # encoder layers
-        for layer in self.layers:
+        for layer, key in zip(self.layers, src_subgraphs.keys()):
             x, x_line_graph = layer(x, src_selected_idx, src_node_idx, embed_pos,
-            x_line_graph, src_line_edges, encoder_padding_mask)
+            x_line_graph, src_line_edges, encoder_padding_mask, src_subgraphs[key])
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)

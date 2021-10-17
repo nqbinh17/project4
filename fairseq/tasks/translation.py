@@ -190,7 +190,7 @@ def load_langpair_dataset(
         src_line_nodes.append(new_text)
         src_line_edges.append(torch.LongTensor(new_edge))
         subgraph_sparse_matrices = subgraph_edges(new_edge, 6)
-        src_subgraphs.append(src_subgraphs)
+        src_subgraphs.append(subgraph_sparse_matrices)
 
     # END YOUR CODE
     return LanguagePairDataset(

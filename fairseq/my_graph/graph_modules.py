@@ -356,6 +356,49 @@ class GNNML1(MessagePassing):
             return x_j
         return norm.view(-1, 1) * x_j
 
+@torch.jit._overload
+def gcn_norm(edge_index, edge_weight=None, num_nodes=None, improved=False,
+             add_self_loops=True, dtype=None):
+    # type: (SparseTensor, OptTensor, Optional[int], bool, bool, Optional[int]) -> SparseTensor  # noqa
+    pass
+
+def gcn_norm(edge_index, edge_weight=None, num_nodes=None, improved=False,
+             add_self_loops=True, dtype=None):
+
+    fill_value = 2. if improved else 1.
+
+    if isinstance(edge_index, SparseTensor):
+        adj_t = edge_index
+        if not adj_t.has_value():
+            adj_t = adj_t.fill_value(1., dtype=dtype)
+        if add_self_loops:
+            adj_t = fill_diag(adj_t, fill_value)
+        deg = sparsesum(adj_t, dim=1)
+        deg_inv_sqrt = deg.pow_(-0.5)
+        deg_inv_sqrt.masked_fill_(deg_inv_sqrt == float('inf'), 0.)
+        adj_t = mul(adj_t, deg_inv_sqrt.view(-1, 1))
+        adj_t = mul(adj_t, deg_inv_sqrt.view(1, -1))
+        return adj_t
+
+    else:
+        num_nodes = maybe_num_nodes(edge_index, num_nodes)
+
+        if edge_weight is None:
+            edge_weight = torch.ones((edge_index.size(1), ), dtype=dtype,
+                                     device=edge_index.device)
+
+        if add_self_loops:
+            edge_index, tmp_edge_weight = add_remaining_self_loops(
+                edge_index, edge_weight, fill_value, num_nodes)
+            assert tmp_edge_weight is not None
+            edge_weight = tmp_edge_weight
+
+        row, col = edge_index[0], edge_index[1]
+        deg = scatter_add(edge_weight, col, dim=0, dim_size=num_nodes)
+        deg_inv_sqrt = deg.pow_(-0.5)
+        deg_inv_sqrt.masked_fill_(deg_inv_sqrt == float('inf'), 0)
+        return edge_index, deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
+
 class GNNML1b(MessagePassing):
     def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args, heads = 8, **kwargs):
         kwargs.setdefault('aggr', 'add')
@@ -368,18 +411,20 @@ class GNNML1b(MessagePassing):
         self.attention = ScoreCollections(self.heads, self.out_channels, "Transformer")
         self.attn_dropout = FairseqDropout(args.attention_dropout, module_name=self.__class__.__name__)
         
-        self.fc1 = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
-        self.fc2 = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+        self.fc_sub = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         self.fc_aggr = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         self.fc_skip = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         
-    def forward(self, x, edge_index, edge_attr = None):
-        aggr = self.propagate(edge_index, x = self.fc_aggr(x))
+    def forward(self, x, edge_index, edge_subgraph, edge_attr = None):
+        edge_index, edge_weight = gcn_norm(edge_index, x.size(0))
+        aggr = self.propagate(edge_index, x = self.fc_aggr(x), edge_weight = edge_weight)
+        edge_subgraph, edge_weight = gcn_norm(edge_subgraph, x.size(0))
+        sub_aggr = self.propagate(edge_subgraph, x = self.fc_sub(x), edge_weight = edge_weight)
         x_skip = self.fc_skip(x)
-        x = x_skip + aggr + self.fc1(x) * self.fc2(x)
+        x = x_skip + aggr + sub_aggr
         return x
 
-    def message(self, x_i, x_j, index, edge_attr = None,
+    def message(self, x_i, x_j, index, edge_weight=None, edge_attr = None,
                 size_i = None, ptr = None):
         if type(edge_attr) != type(None):
             x_i += edge_attr
@@ -388,7 +433,10 @@ class GNNML1b(MessagePassing):
         alpha = self.attention(x_i * x_j, index, size_i)
         alpha = self.attn_dropout(alpha)
         edge_features = x_j * alpha.view(-1, self.heads, 1)
-        return edge_features.view(-1, self.heads * self.head_dim)
+        edge_features = edge_features.view(-1, self.heads * self.head_dim)
+        if edge_weight is not None:
+            edge_features = edge_features * edge_weight.view(-1, 1)
+        return edge_features
 
 class UCCAEncoder(nn.Module):
     def __init__(self, in_dim, hidden_dim, out_dim, args, layers=1, use_label = True):

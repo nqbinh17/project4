@@ -198,13 +198,13 @@ def collate(
     for i, (order, extra) in enumerate(zip(sort_order, extra_length)):
         for n in range(num_layer):
             s = string + str(n+1) # src_graph1, 2, 3
-            print(samples[order][item][n])
-            edge = samples[order][item][n] + extra
-            edge = edge + i * seq_len
+            edges = samples[order][item][n]
+            indices = edges.coalesce().indices() + extra + i * seq_len
+            #values = edges.values()
             if s in src_subgraphs:
-                src_subgraphs[s] = torch.cat([src_subgraphs[s], edge], dim = 1)
+                src_subgraphs[s] = torch.cat([src_subgraphs[s], indices], dim = 1)
             else:
-                src_subgraphs[s] = edge
+                src_subgraphs[s] = indices
     # END YOUR CODE
     batch = {
         "id": id,
