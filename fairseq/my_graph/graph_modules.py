@@ -7,6 +7,10 @@ import math
 from torch_geometric.nn import MessagePassing
 import torch_geometric.nn as pyg_nn
 import torch_geometric.utils as pyg_utils
+from torch_scatter import scatter_add
+from torch_sparse import SparseTensor, fill_diag
+from torch_geometric.utils import add_remaining_self_loops
+from torch_geometric.utils.num_nodes import maybe_num_nodes
 
 from fairseq import utils
 from fairseq.modules.fairseq_dropout import FairseqDropout
@@ -410,18 +414,20 @@ class GNNML1b(MessagePassing):
         self.head_dim = self.in_channels // self.heads
         self.attention = ScoreCollections(self.heads, self.out_channels, "Transformer")
         self.attn_dropout = FairseqDropout(args.attention_dropout, module_name=self.__class__.__name__)
-        
+        self.activation = nn.PReLU()
+
         self.fc_sub = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         self.fc_aggr = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         self.fc_skip = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         
     def forward(self, x, edge_index, edge_subgraph, edge_attr = None):
-        edge_index, edge_weight = gcn_norm(edge_index, x.size(0))
+        edge_index, edge_weight = gcn_norm(edge_index, num_nodes = x.size(0))
         aggr = self.propagate(edge_index, x = self.fc_aggr(x), edge_weight = edge_weight)
-        edge_subgraph, edge_weight = gcn_norm(edge_subgraph, x.size(0))
+        edge_subgraph, edge_weight = gcn_norm(edge_subgraph, num_nodes = x.size(0))
         sub_aggr = self.propagate(edge_subgraph, x = self.fc_sub(x), edge_weight = edge_weight)
         x_skip = self.fc_skip(x)
         x = x_skip + aggr + sub_aggr
+        x = self.activation(x)
         return x
 
     def message(self, x_i, x_j, index, edge_weight=None, edge_attr = None,
@@ -447,7 +453,6 @@ class UCCAEncoder(nn.Module):
         self.out_dim = out_dim
         self.quant_noise = getattr(args, 'quant_noise_pq', 0)
         self.quant_noise_block_size = getattr(args, 'quant_noise_pq_block_size', 8) or 8
-        self.num_layers = 3 # hard-code
         self.use_label = use_label
         self.num_heads = 8
         self.dropout_module = FairseqDropout(
@@ -477,32 +482,16 @@ class UCCAEncoder(nn.Module):
         else:
             print("We don't support Graph Module: ", graph_type)
             a = b
-        self.layers = layers
-        if self.layers > 1:
-            self.convs = nn.ModuleList()
-            for i in range(layers):
-                self.convs.append(Model(*settings))
-        else:
-            self.convs = Model(*settings)
-        self.convs_layer_norm = LayerNorm(self.in_dim)
+
+        self.convs = Model(*settings)
         if self.use_label == True:
             self.lin_label = build_linear(self.in_dim, self.in_dim, self.quant_noise, self.quant_noise_block_size, False)
+            self.label_layer_norm = LayerNorm(self.in_dim)
 
-    def residual_connection(self, x, residual):
-        return residual + x
     def forward(self, x, edge_index, x_label = None):
-        if self.layers == 1:
-            if self.use_label == True:
-                x_label = self.convs_layer_norm(x_label)
-                x_label = self.lin_label(x_label)
-                x_label = self.dropout_module(x_label)
-            x = self.convs(x, edge_index, x_label)
-        else:
-            for convs in self.convs:
-                x = self.convs_layer_norm(x)
-                x_label = self.convs_layer_norm(x_label)
-                x_label = self.lin_label(x_label)
-                x_label = self.dropout_module(x_label)
-                x = convs(x, edge_index, x_label)
-                x = self.dropout_module(x)
+        if self.use_label == True:
+            x_label = self.label_layer_norm(x_label)
+            x_label = self.lin_label(x_label)
+            x_label = self.dropout_module(x_label)
+        x = self.convs(x, edge_index, x_label)
         return x, x_label
