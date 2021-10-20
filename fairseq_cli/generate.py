@@ -93,6 +93,7 @@ def _main(cfg: DictConfig, output_file):
 
     # Load ensemble
     logger.info("loading model(s) from {}".format(cfg.common_eval.path))
+    
     models, saved_cfg = checkpoint_utils.load_model_ensemble(
         utils.split_paths(cfg.common_eval.path),
         arg_overrides=overrides,
@@ -101,8 +102,9 @@ def _main(cfg: DictConfig, output_file):
         strict=(cfg.checkpoint.checkpoint_shard_count == 1),
         num_shards=cfg.checkpoint.checkpoint_shard_count,
     )
-
+    
     # loading the dataset should happen after the checkpoint has been loaded so we can give it the saved task config
+    task.load_dataset(cfg.dataset.gen_subset, task_cfg=saved_cfg.task)
 
     if cfg.generation.lm_path is not None:
         overrides["data"] = cfg.task.data
@@ -123,6 +125,7 @@ def _main(cfg: DictConfig, output_file):
         lms = [None]
 
     # Optimize ensemble for generation
+    
     for model in chain(models, lms):
         if model is None:
             continue
@@ -131,13 +134,33 @@ def _main(cfg: DictConfig, output_file):
         if use_cuda and not cfg.distributed_training.pipeline_model_parallel:
             model.cuda()
         model.prepare_for_inference_(cfg)
-
+    
     # Load alignment dictionary for unknown word replacement
     # (None if no unknown word replacement, empty if no path to align dictionary)
     align_dict = utils.load_align_dict(cfg.generation.replace_unk)
 
     # Load dataset (possibly sharded)
-
+    itr = task.get_batch_iterator(
+        dataset=task.dataset(cfg.dataset.gen_subset),
+        max_tokens=cfg.dataset.max_tokens,
+        max_sentences=cfg.dataset.batch_size,
+        max_positions=utils.resolve_max_positions(
+            task.max_positions(), *[m.max_positions() for m in models]
+        ),
+        ignore_invalid_inputs=cfg.dataset.skip_invalid_size_inputs_valid_test,
+        required_batch_size_multiple=cfg.dataset.required_batch_size_multiple,
+        seed=cfg.common.seed,
+        num_shards=cfg.distributed_training.distributed_world_size,
+        shard_id=cfg.distributed_training.distributed_rank,
+        num_workers=cfg.dataset.num_workers,
+        data_buffer_size=cfg.dataset.data_buffer_size,
+    ).next_epoch_itr(shuffle=False)
+    progress = progress_bar.progress_bar(
+        itr,
+        log_format=cfg.common.log_format,
+        log_interval=cfg.common.log_interval,
+        default_log_format=("tqdm" if not cfg.common.no_progress_bar else "simple"),
+    )
 
     # Initialize generator
     gen_timer = StopwatchMeter()
@@ -157,156 +180,95 @@ def _main(cfg: DictConfig, output_file):
         if tokenizer is not None:
             x = tokenizer.decode(x)
         return x
+    obj = {
+    'graph_transformer': {'path': "/content/graph_transformer_st_valid1_full.out", 'name': 'graph_transformer'},
+    'scaled_transformer': {'path': "/content/scaled_transformer_valid1_full.out", 'name': 'scaled_transformer'},
+    'standard_transformer': {'path': "/content/standard_transformer_valid1_full.out", 'name': 'standard_transformer'}
+    }
+    import re
+    def clean_ref(string):
+      string = ' '.join(string.replace('\n', '').split()[1:])
+      return string
 
-    with open(cfg.task.significance_index_path, "r") as f:
-      datas = f.readlines()
-      significance_index_datas = []
-      for d in datas:
-        processed = list(map(lambda x: int(x), d.split()))
-        significance_index_datas.append(processed)
+    def clean_cand(string):
+      string = ' '.join(string.replace('\n', '').split()[2:])
+      return string
 
-    for i, significance_index_data in enumerate(significance_index_datas):
-        print("Significance Testing {}".format(i+1))
-        task.load_dataset(cfg.dataset.gen_subset, task_cfg=saved_cfg.task, significance_index_data = significance_index_data)
-        itr = task.get_batch_iterator(
-            dataset=task.dataset(cfg.dataset.gen_subset),
-            max_tokens=cfg.dataset.max_tokens,
-            max_sentences=cfg.dataset.batch_size,
-            max_positions=utils.resolve_max_positions(
-                task.max_positions(), *[m.max_positions() for m in models]
-            ),
-            ignore_invalid_inputs=cfg.dataset.skip_invalid_size_inputs_valid_test,
-            required_batch_size_multiple=cfg.dataset.required_batch_size_multiple,
-            seed=cfg.common.seed,
-            num_shards=cfg.distributed_training.distributed_world_size,
-            shard_id=cfg.distributed_training.distributed_rank,
-            num_workers=cfg.dataset.num_workers,
-            data_buffer_size=cfg.dataset.data_buffer_size,
-        ).next_epoch_itr(shuffle=False)
-        progress = progress_bar.progress_bar(
-            itr,
-            log_format=cfg.common.log_format,
-            log_interval=cfg.common.log_interval,
-            default_log_format=("tqdm" if not cfg.common.no_progress_bar else "simple"),
+    # Clean & Store references and candidate sentences for each model
+
+    for key in obj.keys():
+      holder = obj[key]
+      with open(holder['path'], 'r') as f:
+        data = f.readlines()
+        holder['data'] = data 
+      assert len(data) % 5 == 0
+      holder['ref'] = []
+      holder['cand'] = []
+      for i in range(0, len(data), 5):
+        tok_ref = tgt_dict.encode_line(
+            clean_ref(data[i+1]), add_if_not_exist=True
         )
+        tok_cand = tgt_dict.encode_line(
+            clean_cand(data[i+2]), add_if_not_exist=True
+        )
+        holder['ref'].append(tok_ref)
+        holder['cand'].append(tok_cand)
+    
+    from numpy.random import default_rng
+
+    # generate 10000 random indices (80% of samples) for significance test
+
+    rng = default_rng()
+    numbers = rng.choice(20, size=10, replace=False)
+    size = len(holder['ref'])
+    print('total samples', size)
+    def indices(size, n=10000, p=0.8):
+      num_remove = int(size * p)
+      random_indices = [rng.choice(size, size=num_remove, replace=False) for _ in range(n)]
+      return random_indices
+    index = np.array(indices(size), dtype=int)
+    obj['significance_id'] = index
+    # compute bleu score for each sample in significance test
+    for key in obj.keys():
+      if type(obj[key]) != dict:
+        continue
+
+      holder = obj[key]
+      holder['significance_test'] = []
+
+      ref_array = np.array(holder['ref'], dtype=object)
+      cand_array = np.array(holder['cand'], dtype=object)
+      for idx in obj['significance_id']:
         scorer = scoring.build_scorer(cfg.scoring, tgt_dict)
+        
+        new_ref = ref_array[idx]
+        new_cand = cand_array[idx]
+        for ref, cand in zip(new_ref, new_cand):
+          scorer.add(ref, cand)
+        holder['significance_test'].append(scorer.score())
+      holder['significance_test'] = np.array(holder['significance_test'])
 
-        num_sentences = 0
-        has_target = True
-        wps_meter = TimeMeter()
-        for sample in progress:
-            sample = utils.move_to_cuda(sample) if use_cuda else sample
-            if "net_input" not in sample:
-                continue
-
-            prefix_tokens = None
-            if cfg.generation.prefix_size > 0:
-                prefix_tokens = sample["target"][:, : cfg.generation.prefix_size]
-
-            constraints = None
-            if "constraints" in sample:
-                constraints = sample["constraints"]
-
-            gen_timer.start()
-            hypos = task.inference_step(
-                generator,
-                models,
-                sample,
-                prefix_tokens=prefix_tokens,
-                constraints=constraints,
-            )
-            num_generated_tokens = sum(len(h[0]["tokens"]) for h in hypos)
-            gen_timer.stop(num_generated_tokens)
-
-            for i, sample_id in enumerate(sample["id"].tolist()):
-                has_target = sample["target"] is not None
-
-                # Remove padding
-                if "src_tokens" in sample["net_input"]:
-                    src_tokens = utils.strip_pad(
-                        sample["net_input"]["src_tokens"][i, :], tgt_dict.pad()
-                    )
-                else:
-                    src_tokens = None
-
-                target_tokens = None
-                if has_target:
-                    target_tokens = (
-                        utils.strip_pad(sample["target"][i, :], tgt_dict.pad()).int().cpu()
-                    )
-
-                # Either retrieve the original sentences or regenerate them from tokens.
-                if align_dict is not None:
-                    src_str = task.dataset(cfg.dataset.gen_subset).src.get_original_text(
-                        sample_id
-                    )
-                    target_str = task.dataset(cfg.dataset.gen_subset).tgt.get_original_text(
-                        sample_id
-                    )
-                else:
-                    if src_dict is not None:
-                        src_str = src_dict.string(src_tokens, cfg.common_eval.post_process)
-                    else:
-                        src_str = ""
-                    if has_target:
-                        target_str = tgt_dict.string(
-                            target_tokens,
-                            cfg.common_eval.post_process,
-                            escape_unk=True,
-                            extra_symbols_to_ignore=get_symbols_to_strip_from_output(
-                                generator
-                            ),
-                        )
-
-                src_str = decode_fn(src_str)
-                if has_target:
-                    target_str = decode_fn(target_str)
-
-                # Process top predictions
-                for j, hypo in enumerate(hypos[i][: cfg.generation.nbest]):
-                    hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
-                        hypo_tokens=hypo["tokens"].int().cpu(),
-                        src_str=src_str,
-                        alignment=hypo["alignment"],
-                        align_dict=align_dict,
-                        tgt_dict=tgt_dict,
-                        remove_bpe=cfg.common_eval.post_process,
-                        extra_symbols_to_ignore=get_symbols_to_strip_from_output(generator),
-                    )
-                    detok_hypo_str = decode_fn(hypo_str)
-                    if not cfg.common_eval.quiet:
-                        score = hypo["score"] / math.log(2)  # convert to base 2
-
-                    # Score only the top hypothesis
-                    if has_target and j == 0:
-                        if align_dict is not None or cfg.common_eval.post_process is not None:
-                            # Convert back to tokens for evaluation with unk replacement and/or without BPE
-                            target_tokens = tgt_dict.encode_line(
-                                target_str, add_if_not_exist=True
-                            )
-                            hypo_tokens = tgt_dict.encode_line(
-                                detok_hypo_str, add_if_not_exist=True
-                            )
-                        if hasattr(scorer, "add_string"):
-                            scorer.add_string(target_str, detok_hypo_str)
-                        else:
-                            scorer.add(target_tokens, hypo_tokens)
-
-            wps_meter.update(num_generated_tokens)
-            progress.log({"wps": round(wps_meter.avg)})
-            num_sentences += (
-                sample["nsentences"] if "nsentences" in sample else sample["id"].numel()
-            )
-        if has_target:
-
-            print(
-                "Generate {} with beam={}: {}".format(
-                    cfg.dataset.gen_subset, cfg.generation.beam, scorer.result_string()
-                ),
-                file=output_file,
-            )
-
-    return scorer
+    # Final results
+    def compare_significance_test(obj1, obj2):
+      total = len(obj1['significance_test'])
+      def format(num):
+        return round(num, 2)
+      def to_string(mean, std):
+        return '{}±{}'.format(mean, std/2)
+      v1 = obj1['significance_test']
+      v2 = obj2['significance_test']
+      mean1, std1 = format(v1.mean()), format(np.std(v1, axis=0))
+      mean2, std2 = format(v2.mean()), format(np.std(v2, axis=0))
+      cnt = sum(v1 >= v2)
+      
+      return {
+          obj1['name']: {'mean': mean1, 'std': std1, 'str': to_string(mean1, std1)},
+          obj2['name']: {'mean': mean2, 'std': std2, 'str': to_string(mean2, std2)},
+          'significance': format(100 * cnt / total),
+          'samples': total
+      }
+    print(compare_significance_test(obj['graph_transformer'], obj['standard_transformer']))
+    print(compare_significance_test(obj['graph_transformer'], obj['scaled_transformer']))
 
 
 def cli_main():
