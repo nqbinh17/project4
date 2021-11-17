@@ -133,7 +133,8 @@ class TransformerEncoderLayer(nn.Module):
             attn_mask = attn_mask.masked_fill(attn_mask.to(torch.bool), -1e8)
 
         residual = x
-        
+        if self.normalize_before:
+            x = self.self_attn_layer_norm(x)
         x, _ = self.self_attn(
             query=x,
             key=x,

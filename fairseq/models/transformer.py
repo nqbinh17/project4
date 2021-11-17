@@ -434,8 +434,7 @@ class TransformerEncoder(FairseqEncoder):
 
         x = embed = self.embed_scale * x
         if self.embed_positions is not None:
-            embed_pos = self.embed_positions(src_tokens)
-            x = x + embed_pos
+            x = embed + self.embed_positions(src_tokens)
 
         if self.layernorm_embedding is not None:
             x = self.layernorm_embedding(x)
@@ -444,7 +443,7 @@ class TransformerEncoder(FairseqEncoder):
         if self.quant_noise is not None:
             x = self.quant_noise(x)
         
-        return x, embed, src_tokens
+        return x, embed
 
     def forward(
         self,
@@ -516,11 +515,8 @@ class TransformerEncoder(FairseqEncoder):
                   Only populated if *return_all_hiddens* is True.
         """
         # compute padding mask
-        
-        encoder_padding_mask = src_tokens.eq(self.padding_idx)
-        has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
-        x, encoder_embedding, src_tokens = self.forward_embedding(src_tokens, token_embeddings)
+        x, encoder_embedding = self.forward_embedding(src_tokens, token_embeddings)
               
         # account for padding while computing the representation
         # B x T x C -> T x B x C
