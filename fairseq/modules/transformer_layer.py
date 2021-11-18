@@ -36,8 +36,9 @@ class TransformerEncoderLayer(nn.Module):
         self.quant_noise = getattr(args, "quant_noise_pq", 0)
         self.quant_noise_block_size = getattr(args, "quant_noise_pq_block_size", 8) or 8        
         self.self_attn = self.build_self_attention(self.embed_dim, args)
-        self.self_attn_layer_norm = LayerNorm(self.embed_dim)
         export = getattr(args, "export", False)
+        self.self_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
+        
         self.dropout_module = FairseqDropout(
             args.dropout, module_name=self.__class__.__name__
         )
@@ -64,7 +65,7 @@ class TransformerEncoderLayer(nn.Module):
             self.quant_noise,
             self.quant_noise_block_size,
         )
-        self.final_layer_norm = LayerNorm(self.embed_dim)
+        self.final_layer_norm = LayerNorm(self.embed_dim, export=export)
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
         return quant_noise(
