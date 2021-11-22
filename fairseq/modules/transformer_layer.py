@@ -163,7 +163,7 @@ class TransformerEncoderLayer(nn.Module):
             x_line_graph = self.ffn_norm(x_line_graph)
 
         x = torch.gather(x_line_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
-        #x += embed_pos
+        x += embed_pos
         x = x.transpose(0, 1)
         
         # END YOUR CODE
