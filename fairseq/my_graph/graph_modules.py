@@ -424,9 +424,9 @@ class GNNML1b(MessagePassing):
         edge_index, edge_weight = gcn_norm(edge_index, num_nodes = x.size(0))
         aggr = self.propagate(edge_index, x = self.fc_aggr(x), edge_weight = edge_weight)
         edge_subgraph, edge_weight = gcn_norm(edge_subgraph, num_nodes = x.size(0))
-        sub_aggr = self.propagate(edge_subgraph, x = self.fc_sub(x), edge_weight = edge_weight)
+        #sub_aggr = self.propagate(edge_subgraph, x = self.fc_sub(x), edge_weight = edge_weight)
         x_skip = self.fc_skip(x)
-        x = x_skip + aggr + sub_aggr
+        x = x_skip + aggr #+ sub_aggr
         x = self.activation(x)
         return x
 
