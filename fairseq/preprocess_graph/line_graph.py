@@ -1,6 +1,36 @@
 import itertools
+from collections import defaultdict
 
-def Process2LineGraph(size, edge, label):
+def Process2LineGraph(edges, text):
+  edges = zip(*edges)
+  new_edges = []
+  nodes = text.split()
+  from_node = defaultdict(list)
+  for u, v in edges:
+    if nodes[u] == nodes[v] == "IntNode":
+        new_edges.append((u, v))
+        new_edges.append((v, u))
+        print(u, v)
+    from_node[u].append(v)
+  print(from_node)
+  # opposite direction
+  for key, community in from_node.items():
+    n = len(community)
+    for i in range(n):
+      u = community[i]
+      for j in range(i+1, n):
+        v = community[j]
+        new_edges.append((u, v))
+        new_edges.append((v, u))
+  # same direction
+  for key, community in from_node.items():
+    for u in community:
+      if u in from_node:
+        for v in from_node[u]:
+          new_edges.append((key, v))
+  return new_edges
+
+def Process2LineGraph_old(size, edge, label):
   nText = ['' for _ in range(size)]
   nEdge = [[], []]
 
