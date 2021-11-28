@@ -14,9 +14,11 @@ def subgraph_edges(edges, num_layer):
   return sparse_matrices
 
 def edges_to_dense(edges):
-  num_node = max([max(u,v) for u, v in edges]) + 1
-  length = len(edges)
-  edges = torch.LongTensor(list(zip(*edges)))
+  length = len(edges[0])
+  if length == 0:
+    num_node = 0
+  else:
+    num_node = max(max(edges[0]), max(edges[1])) + 1
   sparse_matrix = torch.sparse_coo_tensor(indices = edges, values = torch.ones(length), size = (num_node, num_node))
   dense_matrix = sparse_matrix.to_dense()
   return dense_matrix

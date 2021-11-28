@@ -152,35 +152,8 @@ def collate(
             src_labels = torch.cat([src_labels, l], dim = 0) # shape = [Labels]
     assert src_edges.size(1) == src_labels.size(0)
 
-    """
-    1. Batch left-padding for src_line_nodes
-    2. Example input: [[AAA, CC, DD], [E, F, G]] # [num_edge, label_len]
-    3. Example output: tensor([[000, 11pad, 22pad], [3padpad, 4padpad, 5padpad]])
-    4. src_line_nodes == src_tokens, batch + sentence length must equal
-    5. Expected shape: (total of labels, label_len)"""
-    line_ucca = LineUCCALabel()
-    label_max_len = 0
-    src_line_nodes = None
-    max_len = src_tokens.size(1)
-    for s in sort_order:
-        temp = max([0] + [len(label) for label in samples[s]['src_line_nodes']])
-        label_max_len = max(label_max_len, temp)
 
-    for s in sort_order:
-        l = samples[s]["src_line_nodes"] 
-        padded_label = line_ucca.Label2Seq(l, label_max_len, max_len)
-        if src_line_nodes == None:
-            src_line_nodes = padded_label
-        else:
-            src_line_nodes = torch.cat([src_line_nodes, padded_label], dim = 0) # shape = [Labels, max_len]
-    #batch, sen_len = src_tokens.shape
-    #src_line_nodes = src_line_nodes.reshape(batch, sen_len, label_max_len)
     
-    """
-    1. Processing for src_line_edges
-    2. Input shape: [a, b, c, ...] (a, b, c is int)
-    3. Output shape: [2, a+b+c..]
-    """
     src_line_edges = None
     for data in enumerate(zip(sort_order, extra_length)):
       r = tensorEdges(data, "src_line_edges")
@@ -188,7 +161,6 @@ def collate(
         src_line_edges = r
       else:
         src_line_edges = torch.cat([src_line_edges, r], dim = 1) # shape = [2, Edges]
-    assert src_line_nodes.size(0) == src_line_edges.size(1)
 
     # Process src_subgraphs
     src_subgraphs = {}
@@ -217,7 +189,6 @@ def collate(
             "src_labels": src_labels,
             "src_selected_idx": src_selected_idx,
             "src_node_idx": src_node_idx,
-            "src_line_nodes": src_line_nodes,
             "src_line_edges": src_line_edges,
             "src_subgraphs": src_subgraphs
         },
@@ -336,7 +307,6 @@ class LanguagePairDataset(FairseqDataset):
         src_edges = None,
         src_labels = None,
         src_line_edges = None,
-        src_line_nodes = None,
         src_subgraphs = None
     ):
         if tgt_dict is not None:
@@ -416,7 +386,6 @@ class LanguagePairDataset(FairseqDataset):
         self.intnode_index = self.src_dict.intnode()
         self.src_selected_idx = self.get_selected_index()
         self.src_node_idx = self.get_node_index()
-        self.src_line_nodes = src_line_nodes
         self.src_line_edges = src_line_edges
         self.src_subgraphs = src_subgraphs
         # END YOUR CODE
@@ -472,7 +441,6 @@ class LanguagePairDataset(FairseqDataset):
             "src_labels": self.src_labels[index],
             "src_selected_idx": self.src_selected_idx[index],
             "src_node_idx": self.src_node_idx[index],
-            "src_line_nodes": self.src_line_nodes[index],
             "src_line_edges": self.src_line_edges[index],
             "src_subgraphs": self.src_subgraphs[index],
         }

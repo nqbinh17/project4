@@ -183,11 +183,9 @@ def load_langpair_dataset(
                 len(src_labels), graph_path+'.label'))
     
     src_line_edges = []
-    src_line_nodes = []
     src_subgraphs = []
     for text, edges in zip(src_dataset, src_edges):
         new_edges = Process2LineGraph([edges[1].tolist(), edges[0].tolist()], text, src_dict.intnode())
-        src_line_nodes.append(text)
         src_line_edges.append(torch.LongTensor(new_edges))
         subgraph_sparse_matrices = subgraph_edges(new_edges, 6)
         src_subgraphs.append(subgraph_sparse_matrices)
@@ -210,7 +208,6 @@ def load_langpair_dataset(
         src_edges = src_edges,
         src_labels = src_labels,
         src_line_edges = src_line_edges,
-        src_line_nodes = src_line_nodes,
         src_subgraphs = src_subgraphs,
     )
 
