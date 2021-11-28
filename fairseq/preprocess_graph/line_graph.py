@@ -1,18 +1,17 @@
 import itertools
 from collections import defaultdict
 
-def Process2LineGraph(edges, text):
+def Process2LineGraph(edges, text, intnode):
   edges = zip(*edges)
   new_edges = []
-  nodes = text.split()
+  nodes = text.tolist()
   from_node = defaultdict(list)
   for u, v in edges:
-    if nodes[u] == nodes[v] == "IntNode":
+    if nodes[u] == nodes[v] == intnode:
         new_edges.append((u, v))
         new_edges.append((v, u))
         print(u, v)
     from_node[u].append(v)
-  print(from_node)
   # opposite direction
   for key, community in from_node.items():
     n = len(community)
