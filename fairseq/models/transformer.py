@@ -313,7 +313,6 @@ class TransformerModel(FairseqEncoderDecoderModel):
         src_labels,
         src_selected_idx,
         src_node_idx,
-        src_line_nodes,
         src_line_edges,
         src_subgraphs,
         # END YOUR CODE
@@ -333,7 +332,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
             src_tokens, src_lengths=src_lengths,
             src_edges = src_edges, src_labels= src_labels, 
             src_selected_idx = src_selected_idx, src_node_idx = src_node_idx, 
-            src_line_nodes = src_line_nodes, src_line_edges = src_line_edges,
+            src_line_edges = src_line_edges,
             src_subgraphs = src_subgraphs,
             return_all_hiddens=return_all_hiddens
         )
@@ -488,7 +487,6 @@ class TransformerEncoder(FairseqEncoder):
         src_labels,
         src_selected_idx,
         src_node_idx,
-        src_line_nodes,
         src_line_edges,
         src_subgraphs,
         return_all_hiddens: bool = False,
@@ -522,7 +520,7 @@ class TransformerEncoder(FairseqEncoder):
             src_labels,
             src_selected_idx,
             src_node_idx, 
-            src_line_nodes, src_line_edges,
+            src_line_edges,
             src_subgraphs,
             return_all_hiddens, token_embeddings
             )
@@ -539,7 +537,7 @@ class TransformerEncoder(FairseqEncoder):
         src_labels,
         src_selected_idx,
         src_node_idx,
-        src_line_nodes, src_line_edges,
+        src_line_edges,
         src_subgraphs,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
