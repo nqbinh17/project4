@@ -10,7 +10,6 @@ def Process2LineGraph(edges, text, intnode):
     if nodes[u] == nodes[v] == intnode:
         new_edges.append((u, v))
         new_edges.append((v, u))
-        print(u, v)
     from_node[u].append(v)
   # opposite direction
   for key, community in from_node.items():
