@@ -201,7 +201,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
         # START YOUR CODE
         parser.add_argument('--graph-type', type=str, metavar='STR',
                             help='graph module type e.g: GAT, Sage, normal')
-        parser.add_argument('--use-subgraph', default=False,
+        parser.add_argument('--use-subgraph', default=False, action='store_true',
                             help='use subgraph for each Transformer layer')
         # END YOUR CODE
         # args for Fully Sharded Data Parallel (FSDP) training
