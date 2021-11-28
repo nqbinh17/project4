@@ -201,10 +201,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
         # START YOUR CODE
         parser.add_argument('--graph-type', type=str, metavar='STR',
                             help='graph module type e.g: GAT, Sage, normal')
-        parser.add_argument('--is-graph-outside', default=False, action='store_true',
-                            help='if true, graph encoder outside the Transformer')
-        parser.add_argument('--is-phrase-information', default=False, action='store_true',
-                            help='if true, using x_phrase information instead x_graph for cross-attention')
+        parser.add_argument('--use-subgraph', default=False,
+                            help='use subgraph for each Transformer layer')
         # END YOUR CODE
         # args for Fully Sharded Data Parallel (FSDP) training
         parser.add_argument(
