@@ -417,21 +417,19 @@ class GNNML1b(MessagePassing):
         self.activation = nn.PReLU()
 
         self.use_subgraph = getattr(args, "use_subgraph", False) or False
-        if self.use_subgraph == True:
-            self.fc_sub = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+        
+        #self.fc_sub = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         self.fc_aggr = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         self.fc_skip = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         
     def forward(self, x, edge_index, edge_subgraph, edge_attr = None):
+        if self.use_subgraph:
+            edge_index = torch.cat([edge_index, edge_subgraph], dim=-1)
+            
         edge_index, edge_weight = gcn_norm(edge_index, num_nodes = x.size(0))
         aggr = self.propagate(edge_index, x = self.fc_aggr(x), edge_weight = edge_weight)
         x_skip = self.fc_skip(x)
-        if self.use_subgraph:
-            edge_subgraph, edge_weight = gcn_norm(edge_subgraph, num_nodes = x.size(0))
-            sub_aggr = self.propagate(edge_subgraph, x = self.fc_sub(x), edge_weight = edge_weight)
-            x = x_skip + aggr + sub_aggr
-        else:
-            x = x_skip + aggr
+        x = x_skip + aggr
         x = self.activation(x)
         return x
 
