@@ -459,7 +459,7 @@ class UCCAEncoder(nn.Module):
         self.quant_noise = getattr(args, 'quant_noise_pq', 0)
         self.quant_noise_block_size = getattr(args, 'quant_noise_pq_block_size', 8) or 8
         self.use_label = use_label
-        self.num_heads = 8
+        self.num_heads = getattr(args, "encoder_attention_heads", 8)
         self.dropout_module = FairseqDropout(
             args.dropout, module_name=self.__class__.__name__
         )
@@ -476,8 +476,8 @@ class UCCAEncoder(nn.Module):
             settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, self.num_heads, self.use_label)
         elif graph_type == "EnhancedGraphTransformer":
             Model = EnhancedGraphTransformer
-            head_dim = hidden_dim // 8
-            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, 8, self.use_label)
+            head_dim = hidden_dim // self.num_heads
+            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, self.num_heads, self.use_label)
         elif graph_type == "GNNML1":
             Model = GNNML1
             settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args, self.use_label)
