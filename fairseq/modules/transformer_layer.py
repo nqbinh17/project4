@@ -53,6 +53,7 @@ class TransformerEncoderLayer(nn.Module):
         )
         self.normalize_before = args.encoder_normalize_before
         # START YOUR CODE
+        self.use_ucca = getattr(args, "use_ucca", False) or False
         self.x_line_graph_norm = LayerNorm(self.embed_dim)
         self.ffn_norm = LayerNorm(self.embed_dim)
 
@@ -113,7 +114,7 @@ class TransformerEncoderLayer(nn.Module):
     def forward(
         self,
         x, src_selected_idx, src_node_idx, embed_pos,
-        x_line_graph, src_line_edges,
+        src_edges, x_line_graph, src_line_edges,
         encoder_padding_mask,
         src_subgraph,
         attn_mask: Optional[Tensor] = None,
@@ -147,7 +148,12 @@ class TransformerEncoderLayer(nn.Module):
         batch, dim = x.size(1), x.size(2)
         if self.normalize_before:
             x_line_graph = self.x_line_graph_norm(x_line_graph)
-        x_line_graph, _ = self.line_graph_encode(x_line_graph, src_line_edges, src_subgraph)
+
+        if self.use_ucca:
+            x_line_graph, _ = self.line_graph_encode(x_line_graph, src_edges)
+        else:
+            x_line_graph, _ = self.line_graph_encode(x_line_graph, src_line_edges, src_subgraph)
+            
         x_line_graph = self.dropout_module(x_line_graph)
         x_line_graph = self.residual_connection(x_line_graph, residual)
         if not self.normalize_before:

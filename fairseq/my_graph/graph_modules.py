@@ -422,8 +422,8 @@ class GNNML1b(MessagePassing):
         self.fc_aggr = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         self.fc_skip = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         
-    def forward(self, x, edge_index, edge_subgraph, edge_attr = None):
-        if self.use_subgraph:
+    def forward(self, x, edge_index, edge_subgraph = None, edge_attr = None):
+        if self.use_subgraph and edge_subgraph is not None:
             edge_index = torch.cat([edge_index, edge_subgraph], dim=-1)
             
         edge_index, edge_weight = gcn_norm(edge_index, num_nodes = x.size(0))
