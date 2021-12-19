@@ -177,6 +177,15 @@ def collate(
                 src_subgraphs[s] = torch.cat([src_subgraphs[s], indices], dim = 1)
             else:
                 src_subgraphs[s] = indices
+    
+    src_dense_edges = None
+    for i, (order, extra) in enumerate(zip(sort_order, extra_length)):
+        edges = samples[order]["src_dense_edges"] + extra + i * seq_len
+        if src_dense_edges is None:
+            src_dense_edges = edges
+        else:
+            src_dense_edges = torch.cat([src_dense_edges, edges], dim = 1)
+
     # END YOUR CODE
     batch = {
         "id": id,
@@ -190,7 +199,8 @@ def collate(
             "src_selected_idx": src_selected_idx,
             "src_node_idx": src_node_idx,
             "src_line_edges": src_line_edges,
-            "src_subgraphs": src_subgraphs
+            "src_subgraphs": src_subgraphs,
+            "src_dense_edges": src_dense_edges,
         },
         "target": target,
     }
@@ -307,7 +317,8 @@ class LanguagePairDataset(FairseqDataset):
         src_edges = None,
         src_labels = None,
         src_line_edges = None,
-        src_subgraphs = None
+        src_subgraphs = None,
+        src_dense_edges = None
     ):
         if tgt_dict is not None:
             assert src_dict.pad() == tgt_dict.pad()
@@ -388,6 +399,7 @@ class LanguagePairDataset(FairseqDataset):
         self.src_node_idx = self.get_node_index()
         self.src_line_edges = src_line_edges
         self.src_subgraphs = src_subgraphs
+        self.src_dense_edges = src_dense_edges
         # END YOUR CODE
     # START CODE
     def get_selected_index(self):
@@ -443,6 +455,7 @@ class LanguagePairDataset(FairseqDataset):
             "src_node_idx": self.src_node_idx[index],
             "src_line_edges": self.src_line_edges[index],
             "src_subgraphs": self.src_subgraphs[index],
+            "src_dense_edges": self.src_dense_edges[index],
         }
         if self.align_dataset is not None:
             example["alignment"] = self.align_dataset[index]

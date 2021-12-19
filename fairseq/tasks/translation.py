@@ -28,7 +28,7 @@ from fairseq.data import (
 from fairseq.data.indexed_dataset import get_available_dataset_impl
 from fairseq.dataclass import ChoiceEnum, FairseqDataclass
 from fairseq.tasks import FairseqTask, register_task
-from fairseq.preprocess_graph.line_graph import Process2LineGraph
+from fairseq.preprocess_graph.line_graph import Process2LineGraph, dense_graph
 from fairseq.preprocess_graph.subgraph_cnt import subgraph_edges
 
 EVAL_BLEU_ORDER = 4
@@ -184,8 +184,11 @@ def load_langpair_dataset(
     
     src_line_edges = []
     src_subgraphs = []
+    src_dense_edges = []
     for text, edges in zip(src_dataset, src_edges):
         new_edges = Process2LineGraph([edges[1].tolist(), edges[0].tolist()], text, src_dict.intnode())
+        dense_edges = dense_graph(text)
+        src_dense_edges.append(torch.LongTensor(dense_edges))
         src_line_edges.append(torch.LongTensor(new_edges))
         subgraph_sparse_matrices = subgraph_edges(new_edges, 6)
         src_subgraphs.append(subgraph_sparse_matrices)
@@ -209,6 +212,7 @@ def load_langpair_dataset(
         src_labels = src_labels,
         src_line_edges = src_line_edges,
         src_subgraphs = src_subgraphs,
+        src_dense_edges = src_dense_edges,
     )
 
 

@@ -30,3 +30,12 @@ def Process2LineGraph(edges, text, intnode):
         for v in from_node[u]:
           Append(key, v)
   return new_edges
+
+import itertools
+def dense_graph(text):
+  num_node = len(text)
+  new_edges = [[],[]]
+  for u, v in itertools.combinations(range(num_node),2):
+    new_edges[0].append(u)
+    new_edges[1].append(v)
+  return new_edges

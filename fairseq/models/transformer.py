@@ -201,10 +201,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
         # START YOUR CODE
         parser.add_argument('--graph-type', type=str, metavar='STR',
                             help='graph module type e.g: GAT, Sage, normal')
-        parser.add_argument('--use-ucca', default=False, action='store_true',
-                            help='use UCCA instead of line UCCA for each Transformer layer')
-        parser.add_argument('--use-subgraph', default=False, action='store_true',
-                            help='use subgraph for each Transformer layer')
+        parser.add_argument('--graph-matrix-type', default=str, action='STR',
+                            help='ucca, line_graph, sub_graph, dense_graph')
         # END YOUR CODE
         # args for Fully Sharded Data Parallel (FSDP) training
         parser.add_argument(
@@ -315,6 +313,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
         src_node_idx,
         src_line_edges,
         src_subgraphs,
+        src_dense_edges,
         # END YOUR CODE
         prev_output_tokens,
         return_all_hiddens: bool = True,
@@ -334,6 +333,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
             src_selected_idx = src_selected_idx, src_node_idx = src_node_idx, 
             src_line_edges = src_line_edges,
             src_subgraphs = src_subgraphs,
+            src_dense_edges = src_dense_edges,
             return_all_hiddens=return_all_hiddens
         )
         decoder_out = self.decoder(
@@ -489,6 +489,7 @@ class TransformerEncoder(FairseqEncoder):
         src_node_idx,
         src_line_edges,
         src_subgraphs,
+        src_dense_edges,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
@@ -522,6 +523,7 @@ class TransformerEncoder(FairseqEncoder):
             src_node_idx, 
             src_line_edges,
             src_subgraphs,
+            src_dense_edges,
             return_all_hiddens, token_embeddings
             )
 
@@ -539,6 +541,7 @@ class TransformerEncoder(FairseqEncoder):
         src_node_idx,
         src_line_edges,
         src_subgraphs,
+        src_dense_edges,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
@@ -584,7 +587,7 @@ class TransformerEncoder(FairseqEncoder):
         # encoder layers
         for layer, key in zip(self.layers, src_subgraphs.keys()):
             x, x_line_graph = layer(x, src_selected_idx, src_node_idx, embed_pos,
-            src_edges, x_line_graph, src_line_edges, encoder_padding_mask, src_subgraphs[key])
+            src_edges, x_line_graph, src_line_edges, encoder_padding_mask, src_subgraphs[key], src_dense_edges)
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)
