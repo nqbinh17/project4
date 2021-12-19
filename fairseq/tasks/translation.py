@@ -59,7 +59,8 @@ def load_langpair_dataset(
     shuffle=True,
     pad_to_multiple=1,
     prepend_bos_src=None,
-    graph_path = None
+    graph_path = None,
+    graph_matrix_type = None,
 ):
     def split_exists(split, src, tgt, lang, data_path):
         filename = os.path.join(data_path, "{}.{}-{}.{}".format(split, src, tgt, lang))
@@ -182,17 +183,25 @@ def load_langpair_dataset(
             "loaded {} examples from: {}".format(
                 len(src_labels), graph_path+'.label'))
     
-    src_line_edges = []
-    src_subgraphs = []
-    src_dense_edges = []
+    src_line_edges, src_subgraphs, src_dense_edges = [], [], []
     for text, edges in zip(src_dataset, src_edges):
-        new_edges = Process2LineGraph([edges[1].tolist(), edges[0].tolist()], text, src_dict.intnode())
-        dense_edges = dense_graph(text)
-        src_dense_edges.append(torch.LongTensor(dense_edges))
-        src_line_edges.append(torch.LongTensor(new_edges))
-        subgraph_sparse_matrices = subgraph_edges(new_edges, 6)
-        src_subgraphs.append(subgraph_sparse_matrices)
-
+        if graph_matrix_type == "line_graph":
+            new_edges = Process2LineGraph([edges[1].tolist(), edges[0].tolist()], text, src_dict.intnode())
+            src_line_edges.append(torch.LongTensor(new_edges))
+        elif graph_matrix_type == "sub_graph":
+            new_edges = Process2LineGraph([edges[1].tolist(), edges[0].tolist()], text, src_dict.intnode())
+            src_line_edges.append(torch.LongTensor(new_edges))
+            subgraph_sparse_matrices = subgraph_edges(new_edges, 6)
+            src_subgraphs.append(subgraph_sparse_matrices)
+        elif graph_matrix_type == "dense_graph":
+            dense_edges = dense_graph(text)
+            src_dense_edges.append(torch.LongTensor(dense_edges))
+    if len(src_line_edges) == 0:
+        src_line_edges = None
+    if len(src_subgraphs) == 0:
+        src_subgraphs = None
+    if len(src_dense_edges) == 0:
+        src_dense_edges = None 
     # END YOUR CODE
     return LanguagePairDataset(
         src_dataset,
@@ -207,7 +216,7 @@ def load_langpair_dataset(
         eos=eos,
         num_buckets=num_buckets,
         shuffle=shuffle,
-        pad_to_multiple=pad_to_multiple,
+        pad_to_multiple = pad_to_multiple,
         src_edges = src_edges,
         src_labels = src_labels,
         src_line_edges = src_line_edges,
@@ -312,6 +321,7 @@ class TranslationConfig(FairseqDataclass):
     graph_train_path: Optional[str] = field(default = None)
     graph_valid_path: Optional[str] = field(default = None)
     graph_test_path: Optional[str] = field(default = None)
+    graph_matrix_type: Optional[str] = field(default = "ucca")
     # END CODE
 
 
@@ -417,7 +427,8 @@ class TranslationTask(FairseqTask):
             num_buckets=self.cfg.num_batch_buckets,
             shuffle=(split != "test"),
             pad_to_multiple=self.cfg.required_seq_len_multiple,
-            graph_path = graph_path
+            graph_path = graph_path,
+            graph_matrix_type = self.cfg.graph_matrix_type
         )
 
     def build_dataset_for_inference(self, src_tokens, src_lengths, constraints=None):

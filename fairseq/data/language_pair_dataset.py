@@ -129,6 +129,8 @@ def collate(
     "1. Process for src_edges"
     def tensorEdges(data, item):
         i, [order, e] = data
+        if samples[order][item] is None:
+            return None
         edge = samples[order][item] + e # move idx to the right, since padding to the left
         edge = edge + i * seq_len
         return edge
@@ -157,6 +159,8 @@ def collate(
     src_line_edges = None
     for data in enumerate(zip(sort_order, extra_length)):
       r = tensorEdges(data, "src_line_edges")
+      if r is None:
+          break
       if src_line_edges == None:
         src_line_edges = r
       else:
@@ -165,21 +169,28 @@ def collate(
     # Process src_subgraphs
     src_subgraphs = {}
     item = "src_subgraphs"
-    num_layer = len(samples[0][item])
-    string = "src_graph"
-    for i, (order, extra) in enumerate(zip(sort_order, extra_length)):
-        for n in range(num_layer):
-            s = string + str(n+1) # src_graph1, 2, 3
-            edges = samples[order][item][n]
-            indices = edges.coalesce().indices() + extra + i * seq_len
-            #values = edges.values()
-            if s in src_subgraphs:
-                src_subgraphs[s] = torch.cat([src_subgraphs[s], indices], dim = 1)
-            else:
-                src_subgraphs[s] = indices
+    if samples[0][item] is not None:
+      num_layer = len(samples[0][item])
+      string = "src_graph"
+      for i, (order, extra) in enumerate(zip(sort_order, extra_length)):
+          if num_layer is None:
+              break
+          for n in range(num_layer):
+              s = string + str(n+1) # src_graph1, 2, 3
+              edges = samples[order][item][n]
+              indices = edges.coalesce().indices() + extra + i * seq_len
+              #values = edges.values()
+              if s in src_subgraphs:
+                  src_subgraphs[s] = torch.cat([src_subgraphs[s], indices], dim = 1)
+              else:
+                  src_subgraphs[s] = indices
+    else:
+      src_subgraphs = {"1":0,"2":0,"3":0,"4":0,"5":0,"6":0}
     
     src_dense_edges = None
     for i, (order, extra) in enumerate(zip(sort_order, extra_length)):
+        if samples[order]["src_dense_edges"] is None:
+            return
         edges = samples[order]["src_dense_edges"] + extra + i * seq_len
         if src_dense_edges is None:
             src_dense_edges = edges
@@ -453,9 +464,9 @@ class LanguagePairDataset(FairseqDataset):
             "src_labels": self.src_labels[index],
             "src_selected_idx": self.src_selected_idx[index],
             "src_node_idx": self.src_node_idx[index],
-            "src_line_edges": self.src_line_edges[index],
-            "src_subgraphs": self.src_subgraphs[index],
-            "src_dense_edges": self.src_dense_edges[index],
+            "src_line_edges": self.src_line_edges[index] if self.src_line_edges is not None else None,
+            "src_subgraphs": self.src_subgraphs[index] if self.src_subgraphs is not None else None,
+            "src_dense_edges": self.src_dense_edges[index] if self.src_dense_edges is not None else None,
         }
         if self.align_dataset is not None:
             example["alignment"] = self.align_dataset[index]
