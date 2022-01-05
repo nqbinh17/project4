@@ -201,8 +201,13 @@ class TransformerModel(FairseqEncoderDecoderModel):
         # START YOUR CODE
         parser.add_argument('--graph-type', type=str, metavar='STR',
                             help='graph module type e.g: GAT, Sage, normal')
+<<<<<<< HEAD
         parser.add_argument('--graph-matrix-type', type=str, metavar='STR',
                             help='ucca, line_graph, sub_graph, dense_graph')
+=======
+        parser.add_argument('--use-subgraph', default=False, action='store_true',
+                            help='use subgraph for each Transformer layer')
+>>>>>>> parent of 572a717... add use_ucca option
         # END YOUR CODE
         # args for Fully Sharded Data Parallel (FSDP) training
         parser.add_argument(
@@ -587,7 +592,11 @@ class TransformerEncoder(FairseqEncoder):
         # encoder layers
         for layer, key in zip(self.layers, src_subgraphs.keys()):
             x, x_line_graph = layer(x, src_selected_idx, src_node_idx, embed_pos,
+<<<<<<< HEAD
             src_edges, x_line_graph, src_line_edges, encoder_padding_mask, src_subgraphs[key], src_dense_edges)
+=======
+            x_line_graph, src_line_edges, encoder_padding_mask, src_subgraphs[key])
+>>>>>>> parent of 572a717... add use_ucca option
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)
