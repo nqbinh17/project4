@@ -183,7 +183,7 @@ def load_langpair_dataset(
             "loaded {} examples from: {}".format(
                 len(src_labels), graph_path+'.label'))
     
-    src_line_edges, src_subgraphs = [], [], []
+    src_line_edges, src_subgraphs = [], []
     for text, edges in zip(src_dataset, src_edges):
         if graph_matrix_type == "line_graph":
             new_edges = Process2LineGraph([edges[1].tolist(), edges[0].tolist()], text, src_dict.intnode())
