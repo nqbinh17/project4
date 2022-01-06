@@ -116,7 +116,6 @@ class TransformerEncoderLayer(nn.Module):
         x_line_graph, src_line_edges,
         encoder_padding_mask,
         src_subgraph,
-        src_dense_edges,
         attn_mask: Optional[Tensor] = None,
     ):
         """
