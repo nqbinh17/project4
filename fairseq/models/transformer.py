@@ -585,7 +585,7 @@ class TransformerEncoder(FairseqEncoder):
 
         if self.layer_norm is not None:
             x = self.layer_norm(x)
-
+        
         # The Pytorch Mobile lite interpreter does not supports returning NamedTuple in
         # `forward` so we use a dictionary instead.
         # TorchScript does not support mixed values so the values are all lists.
