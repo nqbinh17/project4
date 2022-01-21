@@ -274,6 +274,7 @@ class GraphTransformer(MessagePassing):
         out = beta * x_r + (1 - beta) * out
         
         return out
+
     def message(self, x_i, x_j, edge_attr,
                 index, ptr=None,
                 size_i=None):
@@ -291,6 +292,8 @@ class GraphTransformer(MessagePassing):
             value += edge_attr
         out = value * alpha.view(-1, self.heads, 1)
         return out
+
+
 class EnhancedGraphTransformer(GraphTransformer):
     def __init__(self, in_channels, out_channels: int, quant_noise, qn_block_size, args,
                  heads: int = 1, isLabeled = True, **kwargs):
@@ -314,8 +317,7 @@ class EnhancedGraphTransformer(GraphTransformer):
         alpha = self.dropout_module(alpha)
 
         value = self.lin_value(x_j).view(-1, self.heads, self.out_channels)
-        if edge_attr != None:
-            value += edge_attr
+
         query_hat = self.attention_vq(value * query, index, size_i)
         query_hat = self.dropout_module(query_hat)
         query_hat = query * query_hat.view(-1, self.heads, 1)
@@ -356,7 +358,7 @@ class UCCAEncoder(nn.Module):
         elif graph_type == "EnhancedGraphTransformer":
             Model = EnhancedGraphTransformer
             head_dim = hidden_dim // self.num_heads
-            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, 8, self.isLabeled)
+            settings = (in_dim, head_dim, self.quant_noise, self.quant_noise_block_size, args, self.num_heads, self.isLabeled)
         else:
             Model = EdgeConv
             settings = (in_dim, hidden_dim, self.quant_noise, self.quant_noise_block_size, args)
