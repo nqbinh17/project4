@@ -68,7 +68,7 @@ class TransformerEncoderLayer(nn.Module):
         )
          # START YOUR CODE
         self.final_layer_norm = LayerNorm(self.embed_dim)
-
+        self.cross_attn_layer_norm = LayerNorm(self.embed_dim)
         self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
         self.gated_residual = GatingResidual(self.embed_dim, self.quant_noise,
             self.quant_noise_block_size, args)
@@ -162,23 +162,21 @@ class TransformerEncoderLayer(nn.Module):
 
         # START YOUR CODE
         batch, dim = x.size(1), x.size(2)
-        x_graph = x_graph.reshape(-1, batch, dim)
-        residual = x_graph
+        residual = x
         if self.normalize_before:
-            x_graph = self.self_attn_layer_norm(x_graph)
-        x_graph, _ = self.self_attn(
-            query=x_graph,
-            key=x_graph,
-            value=x_graph,
+            x = self.self_attn_layer_norm(x)
+        x, _ = self.self_attn(
+            query=x,
+            key=x,
+            value=x,
             key_padding_mask=encoder_padding_mask,
             attn_mask=attn_mask,
         )
-        x_graph = self.dropout_module(x_graph)
-        x_graph = self.residual_connection(x_graph, residual)
+        x = self.dropout_module(x)
+        x = self.residual_connection(x, residual)
         if not self.normalize_before:
-            x_graph = self.self_attn_layer_norm(x_graph)
+            x = self.self_attn_layer_norm(x)
         # START YOUR CODE
-        x_graph = x_graph.reshape(-1, dim)
         residual = x_graph
         if self.normalize_before:
             x_graph = self.final_layer_norm(x_graph)
@@ -190,37 +188,37 @@ class TransformerEncoderLayer(nn.Module):
         if not self.normalize_before:
             x_graph = self.final_layer_norm(x_graph)
 
-        #residual_graph = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
+        residual_graph = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
         #residual_graph += embed_pos
-        #residual_graph = residual_graph.transpose(0, 1)
-        """
-        x_out, _ = self.phrase_attn(
-                        query=x_graph,
+        residual_graph = residual_graph.transpose(0, 1)
+        residual = x
+        if self.normalize_before:
+            x = self.cross_attn_layer_norm(x)
+        x, _ = self.phrase_attn(
+                        query=x,
                         key=residual_graph,
                         value=residual_graph,
-                        key_padding_mask=encoder_padding_mask)
-                        
-        x_out = self.dropout_module(x_out)
-        x_out = self.residual_connection(x_out, residual)
-
-        x_out = self.self_attn_layer_norm(x_out)
-        x = self.attentive_combining_ffw(torch.cat((x, x_out), dim=-1))
+                        key_padding_mask=encoder_padding_mask)      
         x = self.dropout_module(x)
-        x = self.gated_residual(x, residual_graph)
-        x = self.self_attn_layer_norm(x)
-        # END YOUR CODE
-        """
-        
-        residual = x_graph
-        if self.normalize_before:
-            x_graph = self.final_layer_norm(x_graph)
-        x_graph = self.activation_fn(self.fc1(x_graph))
-        x_graph = self.activation_dropout_module(x_graph)
-        x_graph = self.fc2(x_graph)
-        x_graph = self.dropout_module(x_graph)
-        x_graph = self.residual_connection(x_graph, residual)
+        x = self.residual_connection(x, residual)
         if not self.normalize_before:
-            x_graph = self.final_layer_norm(x_graph)
+            x = self.cross_attn_layer_norm(x)
+        #x = self.attentive_combining_ffw(torch.cat((x, x_out), dim=-1))
+        #x = self.dropout_module(x)
+        #x = self.gated_residual(x, residual_graph)
+        #x = self.self_attn_layer_norm(x)
+        # END YOUR CODE
+        
+        residual = x
+        if self.normalize_before:
+            x = self.final_layer_norm(x)
+        x = self.activation_fn(self.fc1(x))
+        x = self.activation_dropout_module(x)
+        x = self.fc2(x)
+        x = self.dropout_module(x)
+        x = self.residual_connection(x, residual)
+        if not self.normalize_before:
+            x = self.final_layer_norm(x)
         return x, x_graph, src_labels
 
 
