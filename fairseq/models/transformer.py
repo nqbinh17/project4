@@ -560,6 +560,7 @@ class TransformerEncoder(FairseqEncoder):
         
         encoder_padding_mask = src_tokens.eq(self.padding_idx)
         has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
+        encoder_padding_mask = src_tokens.eq(self.padding_idx)
 
         x, encoder_embedding, x_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
         src_labels = self.label_embedding(src_labels)
@@ -569,12 +570,14 @@ class TransformerEncoder(FairseqEncoder):
         # account for padding while computing the representation
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
-        encoder_padding_mask = src_tokens.eq(self.padding_idx)
+        
         encoder_states = []
 
         if return_all_hiddens:
             encoder_states.append(x)
-
+        
+        batch, dim = x.size(1), x.size(2)
+        
         # encoder layers
         for layer in self.layers:
             x, x_graph, src_labels = layer(x, x_graph, src_edges, src_selected_idx, src_labels, 
@@ -582,7 +585,7 @@ class TransformerEncoder(FairseqEncoder):
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)
-
+        x = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
         if self.layer_norm is not None:
             x = self.layer_norm(x)
         

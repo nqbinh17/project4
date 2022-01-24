@@ -160,44 +160,42 @@ class TransformerEncoderLayer(nn.Module):
         if attn_mask is not None:
             attn_mask = attn_mask.masked_fill(attn_mask.to(torch.bool), -1e8)
 
-        # START YOUR CODE    
-        residual = x
+        # START YOUR CODE
+        batch, dim = x.size(1), x.size(2)
+        x_graph = x_graph.reshape(-1, batch, dim)
+        residual = x_graph
         if self.normalize_before:
-            x = self.self_attn_layer_norm(x)
-        x, _ = self.self_attn(
-            query=x,
-            key=x,
-            value=x,
+            x_graph = self.self_attn_layer_norm(x_graph)
+        x_graph, _ = self.self_attn(
+            query=x_graph,
+            key=x_graph,
+            value=x_graph,
             key_padding_mask=encoder_padding_mask,
             attn_mask=attn_mask,
         )
-        x = self.dropout_module(x)
-        x = self.residual_connection(x, residual)
+        x_graph = self.dropout_module(x_graph)
+        x_graph = self.residual_connection(x_graph, residual)
         if not self.normalize_before:
-            x = self.self_attn_layer_norm(x)
-        # START YOUR CODE
-        residual = x
-        batch, dim = x.size(1), x.size(2)
-
-        residual_x_graph = x_graph
-        if self.normalize_before:
             x_graph = self.self_attn_layer_norm(x_graph)
+        # START YOUR CODE
+        x_graph = x_graph.reshape(-1, dim)
+        residual = x_graph
+        if self.normalize_before:
+            x_graph = self.final_layer_norm(x_graph)
+
         x_graph, src_labels = self.graph_encode(x_graph, src_edges, src_labels)
         x_graph = self.dropout_module(x_graph)
-        x_graph = self.residual_connection(x_graph, residual_x_graph)
+        x_graph = self.residual_connection(x_graph, residual)
+
         if not self.normalize_before:
-            x_graph = self.self_attn_layer_norm(x_graph)
+            x_graph = self.final_layer_norm(x_graph)
 
-        residual_graph = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
-        residual_graph += embed_pos
-        residual_graph = residual_graph.transpose(0, 1)
-
-        residual = x
-        x = self.word_graph_gated_residual(x, residual_graph)
-        x = self.self_attn_layer_norm(x)
-
+        #residual_graph = torch.gather(x_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
+        #residual_graph += embed_pos
+        #residual_graph = residual_graph.transpose(0, 1)
+        """
         x_out, _ = self.phrase_attn(
-                        query=x,
+                        query=x_graph,
                         key=residual_graph,
                         value=residual_graph,
                         key_padding_mask=encoder_padding_mask)
@@ -211,17 +209,18 @@ class TransformerEncoderLayer(nn.Module):
         x = self.gated_residual(x, residual_graph)
         x = self.self_attn_layer_norm(x)
         # END YOUR CODE
+        """
         
-        residual = x
+        residual = x_graph
         if self.normalize_before:
-            x = self.final_layer_norm(x)
-        x = self.activation_fn(self.fc1(x))
-        x = self.activation_dropout_module(x)
-        x = self.fc2(x)
-        x = self.dropout_module(x)
-        x = self.residual_connection(x, residual)
+            x_graph = self.final_layer_norm(x_graph)
+        x_graph = self.activation_fn(self.fc1(x_graph))
+        x_graph = self.activation_dropout_module(x_graph)
+        x_graph = self.fc2(x_graph)
+        x_graph = self.dropout_module(x_graph)
+        x_graph = self.residual_connection(x_graph, residual)
         if not self.normalize_before:
-            x = self.final_layer_norm(x)
+            x_graph = self.final_layer_norm(x_graph)
         return x, x_graph, src_labels
 
 
