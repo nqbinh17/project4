@@ -69,13 +69,15 @@ class TransformerEncoderLayer(nn.Module):
          # START YOUR CODE
         self.final_layer_norm = LayerNorm(self.embed_dim)
         self.cross_attn_layer_norm = LayerNorm(self.embed_dim)
+        self.mlp_layer_norm = LayerNorm(self.embed_dim)
+
         self.graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args)
         self.gated_residual = GatingResidual(self.embed_dim, self.quant_noise,
             self.quant_noise_block_size, args)
         self.word_graph_gated_residual = GatingResidual(self.embed_dim, self.quant_noise,
             self.quant_noise_block_size, args)
         self.phrase_attn = self.build_phrase_attention(self.embed_dim, args)
-        self.attentive_combining_ffw = FeedForward(self.embed_dim*2, 
+        self.attentive_combining_ffw = FeedForward(self.embed_dim, 
                                                     2048, 
                                                     self.embed_dim, 
                                                     self.quant_noise, 
@@ -203,11 +205,15 @@ class TransformerEncoderLayer(nn.Module):
         x = self.residual_connection(x, residual)
         if not self.normalize_before:
             x = self.cross_attn_layer_norm(x)
-        #x = self.attentive_combining_ffw(torch.cat((x, x_out), dim=-1))
-        #x = self.dropout_module(x)
-        #x = self.gated_residual(x, residual_graph)
-        #x = self.self_attn_layer_norm(x)
-        # END YOUR CODE
+
+        residual = x
+        if self.normalize_before:
+            x = self.mlp_layer_norm(x)
+        x = self.attentive_combining_ffw(x)
+        x = self.dropout_module(x)
+        x = self.residual_connection(x, residual)
+        if not self.normalize_before:
+            x = self.mlp_layer_norm(x)
         
         residual = x
         if self.normalize_before:
