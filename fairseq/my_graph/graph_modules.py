@@ -417,21 +417,21 @@ class GNNML1b(MessagePassing):
         self.activation = nn.PReLU()
 
         self.use_subgraph = getattr(args, "use_subgraph", False) or False
-        #if self.use_subgraph == True:
-            #self.fc_sub = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
-        #self.fc_aggr = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+        if self.use_subgraph == True:
+            self.fc_sub = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+        self.fc_aggr = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         self.fc_skip = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
-        self.fc_query = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
-        self.fc_key = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
-        self.fc_value = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+        #self.fc_query = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+        #self.fc_key = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
+        #self.fc_value = build_linear(self.in_channels, self.out_channels, quant_noise, qn_block_size, True)
         
     def forward(self, x, edge_index, edge_subgraph, edge_attr = None):
         edge_index, edge_weight = gcn_norm(edge_index, num_nodes = x.size(0))
-        aggr = self.propagate(edge_index, x = x, edge_weight = edge_weight)
+        aggr = self.propagate(edge_index, x = self.fc_aggr(x), edge_weight = edge_weight)
         x_skip = self.fc_skip(x)
         if self.use_subgraph:
             edge_subgraph, edge_weight = gcn_norm(edge_subgraph, num_nodes = x.size(0))
-            sub_aggr = self.propagate(edge_subgraph, x = x, edge_weight = edge_weight)
+            sub_aggr = self.propagate(edge_subgraph, x = self.fc_sub(x), edge_weight = edge_weight)
             x = x_skip + aggr + sub_aggr
         else:
             x = x_skip + aggr
@@ -442,12 +442,11 @@ class GNNML1b(MessagePassing):
                 size_i = None, ptr = None):
         if type(edge_attr) != type(None):
             x_i += edge_attr
-        query = self.fc_query(x_i).view(-1, self.heads, self.head_dim)
-        key = self.fc_key(x_j).view(-1, self.heads, self.head_dim)
-        value = self.fc_value(x_j).view(-1, self.heads, self.head_dim)
-        alpha = self.attention(query * key, index, size_i)
+        x_i = x_i.view(-1, self.heads, self.head_dim)
+        x_j = x_j.view(-1, self.heads, self.head_dim)
+        alpha = self.attention(x_i * x_j, index, size_i)
         alpha = self.attn_dropout(alpha)
-        edge_features = value * alpha.view(-1, self.heads, 1)
+        edge_features = x_j * alpha.view(-1, self.heads, 1)
         edge_features = edge_features.view(-1, self.heads * self.head_dim)
         if edge_weight is not None:
             edge_features = edge_features * edge_weight.view(-1, 1)
