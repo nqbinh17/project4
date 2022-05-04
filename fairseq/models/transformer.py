@@ -306,14 +306,6 @@ class TransformerModel(FairseqEncoderDecoderModel):
         self,
         src_tokens,
         src_lengths,
-        # START YOUR CODE
-        src_edges,
-        src_labels,
-        src_selected_idx,
-        src_node_idx,
-        src_line_edges,
-        src_subgraphs,
-        # END YOUR CODE
         prev_output_tokens,
         return_all_hiddens: bool = True,
         features_only: bool = False,
@@ -328,10 +320,6 @@ class TransformerModel(FairseqEncoderDecoderModel):
         """
         encoder_out = self.encoder(
             src_tokens, src_lengths=src_lengths,
-            src_edges = src_edges, src_labels= src_labels, 
-            src_selected_idx = src_selected_idx, src_node_idx = src_node_idx, 
-            src_line_edges = src_line_edges,
-            src_subgraphs = src_subgraphs,
             return_all_hiddens=return_all_hiddens
         )
         decoder_out = self.decoder(
@@ -426,13 +414,7 @@ class TransformerEncoder(FairseqEncoder):
             self.layer_norm = LayerNorm(embed_dim, export=export)
         else:
             self.layer_norm = None
-        # START YOUR CODE
-        """
-        self.line_ucca = LineUCCALabel()
-        self.label_embedding = nn.Embedding(self.line_ucca.length(), embed_dim, padding_idx = self.line_ucca.getPadIndex())
-        nn.init.normal_(self.label_embedding.weight, mean=0, std=embed_dim ** -0.5)
-        """
-        # END YOUR CODE
+
     def build_encoder_layer(self, args):
         layer = TransformerEncoderLayer(args)
         checkpoint = getattr(args, "checkpoint_activations", False)
@@ -450,43 +432,26 @@ class TransformerEncoder(FairseqEncoder):
         return layer
 
     def forward_embedding(
-        self, src_tokens, src_selected_idx, token_embedding: Optional[torch.Tensor] = None,
+        self, src_tokens, token_embedding: Optional[torch.Tensor] = None,
     ):
         # embed tokens and positions
         if token_embedding is None:
-            x_graph = self.embed_tokens(src_tokens)
-            batch, seql, dim = x_graph.shape
-            src_tokens = torch.gather(src_tokens, 1, src_selected_idx)
             x = self.embed_tokens(src_tokens)
         x = embed = self.embed_scale * x
-        x_graph = self.embed_scale * x_graph
         if self.embed_positions is not None:
-            embed_pos = self.embed_positions(src_tokens)
-            x = x + embed_pos
+            x = x + self.embed_positions(src_tokens)
         if self.layernorm_embedding is not None:
             x = self.layernorm_embedding(x)
-            x_graph = self.layernorm_embedding(x_graph)
-            embed_pos = self.layernorm_embedding(embed_pos)
         x = self.dropout_module(x)
-        x_graph = self.dropout_module(x_graph)
-        embed_pos = self.dropout_module(embed_pos)
+        
         if self.quant_noise is not None:
             x = self.quant_noise(x)
-            x_graph = self.quant_noise(x_graph)
-            embed_pos = self.quant_noise(embed_pos)
-        x_graph = x_graph.reshape(batch * seql, dim)
-        return x, embed, x_graph, embed_pos, src_tokens
+        return x, embed
 
     def forward(
         self,
         src_tokens,
         src_lengths,
-        src_edges,
-        src_labels,
-        src_selected_idx,
-        src_node_idx,
-        src_line_edges,
-        src_subgraphs,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
@@ -514,12 +479,7 @@ class TransformerEncoder(FairseqEncoder):
                   Only populated if *return_all_hiddens* is True.
         """
         return self.forward_scriptable(
-            src_tokens, src_lengths, src_edges,
-            src_labels,
-            src_selected_idx,
-            src_node_idx, 
-            src_line_edges,
-            src_subgraphs,
+            src_tokens, src_lengths,
             return_all_hiddens, token_embeddings
             )
 
@@ -531,12 +491,6 @@ class TransformerEncoder(FairseqEncoder):
         self,
         src_tokens,
         src_lengths,
-        src_edges,
-        src_labels,
-        src_selected_idx,
-        src_node_idx,
-        src_line_edges,
-        src_subgraphs,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
     ):
@@ -568,7 +522,7 @@ class TransformerEncoder(FairseqEncoder):
         encoder_padding_mask = src_tokens.eq(self.padding_idx)
         has_pads = src_tokens.device.type == "xla" or encoder_padding_mask.any()
 
-        x, encoder_embedding, x_line_graph, embed_pos, src_tokens = self.forward_embedding(src_tokens, src_selected_idx, token_embeddings)
+        x, encoder_embedding = self.forward_embedding(src_tokens, token_embeddings)
               
         # account for padding while computing the representation
         # B x T x C -> T x B x C
@@ -580,9 +534,8 @@ class TransformerEncoder(FairseqEncoder):
             encoder_states.append(x)
 
         # encoder layers
-        for layer, key in zip(self.layers, src_subgraphs.keys()):
-            x, x_line_graph = layer(x, src_selected_idx, src_node_idx, embed_pos,
-            x_line_graph, src_line_edges, encoder_padding_mask, src_subgraphs[key])
+        for layer in self.layers:
+            x = layer(x, encoder_padding_mask)
             if return_all_hiddens:
                 assert encoder_states is not None
                 encoder_states.append(x)

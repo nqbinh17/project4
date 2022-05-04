@@ -52,14 +52,13 @@ class TransformerEncoderLayer(nn.Module):
             float(activation_dropout_p), module_name=self.__class__.__name__
         )
         self.normalize_before = args.encoder_normalize_before
-        # START YOUR CODE
-        self.x_line_graph_norm = LayerNorm(self.embed_dim)
-        self.ffn_norm = LayerNorm(self.embed_dim)
 
-        self.line_graph_encode = UCCAEncoder(self.embed_dim, self.embed_dim, self.embed_dim, args, use_label = False)
-        self.ffn = FeedForward(self.embed_dim, args.encoder_ffn_embed_dim, self.embed_dim, 
-                                self.quant_noise, self.quant_noise_block_size, args)
-        # END YOUR CODE
+        self.self_attn = self.build_self_attention(self.embed_dim, args)
+        self.self_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
+        self.fc1 = self.build_fc1(self.embed_dim, args.encoder_ffn_embed_dim,self.quant_noise,self.quant_noise_block_size)
+        self.fc2 = self.build_fc2(args.encoder_ffn_embed_dim, self.embed_dim,self.quant_noise,self.quant_noise_block_size)
+        self.final_layer_norm = LayerNorm(self.embed_dim, export=export)
+
 
     def build_fc1(self, input_dim, output_dim, q_noise, qn_block_size):
         return quant_noise(
@@ -70,19 +69,7 @@ class TransformerEncoderLayer(nn.Module):
         return quant_noise(
             nn.Linear(input_dim, output_dim), p=q_noise, block_size=qn_block_size
         )
-    # START YOUR CODE
-    def build_phrase_attention(self, embed_dim, args):
-        return MultiheadAttention(
-            embed_dim,
-            args.encoder_attention_heads,
-            kdim=self.embed_dim,
-            vdim=self.embed_dim,
-            dropout=args.attention_dropout,
-            self_attention=False,
-            q_noise=self.quant_noise,
-            qn_block_size=self.quant_noise_block_size,
-        )
-    # END YOUR CODE
+
     def build_self_attention(self, embed_dim, args):
         return MultiheadAttention(
             embed_dim,
@@ -112,10 +99,8 @@ class TransformerEncoderLayer(nn.Module):
 
     def forward(
         self,
-        x, src_selected_idx, src_node_idx, embed_pos,
-        x_line_graph, src_line_edges,
+        x,
         encoder_padding_mask,
-        src_subgraph,
         attn_mask: Optional[Tensor] = None,
     ):
         """
@@ -139,36 +124,37 @@ class TransformerEncoderLayer(nn.Module):
         # the attention weight (before softmax) for some padded element in query
         # will become -inf, which results in NaN in model parameters
         if attn_mask is not None:
-            attn_mask = attn_mask.masked_fill(attn_mask.to(torch.bool), -1e8)
+            attn_mask = attn_mask.masked_fill(attn_mask.to(torch.bool), -1e8 if x.dtype == torch.float32 else -1e4)
 
-        # START YOUR CODE    
-        
-        residual = x_line_graph
-        batch, dim = x.size(1), x.size(2)
+        residual = x
         if self.normalize_before:
-            x_line_graph = self.x_line_graph_norm(x_line_graph)
-        x_line_graph, _ = self.line_graph_encode(x_line_graph, src_line_edges, src_subgraph)
-        x_line_graph = self.dropout_module(x_line_graph)
-        x_line_graph = self.residual_connection(x_line_graph, residual)
+            x = self.self_attn_layer_norm(x)
+        x, _ = self.self_attn(
+            query=x,
+            key=x,
+            value=x,
+            key_padding_mask=encoder_padding_mask,
+            need_weights=False,
+            attn_mask=attn_mask,
+        )
+        x = self.dropout_module(x)
+        x = self.residual_connection(x, residual)
         if not self.normalize_before:
-            x_line_graph = self.x_line_graph_norm(x_line_graph)
-        
-        residual = x_line_graph
+            x = self.self_attn_layer_norm(x)
+
+        residual = x
         if self.normalize_before:
-            x_line_graph = self.ffn_norm(x_line_graph)
-        x_line_graph = self.ffn(x_line_graph)
-        x_line_graph = self.dropout_module(x_line_graph)
-        x_line_graph = self.residual_connection(x_line_graph, residual)
+            x = self.final_layer_norm(x)
+        x = self.activation_fn(self.fc1(x))
+        x = self.activation_dropout_module(x)
+        x = self.fc2(x)
+
+        x = self.dropout_module(x)
+        x = self.residual_connection(x, residual)
         if not self.normalize_before:
-            x_line_graph = self.ffn_norm(x_line_graph)
+            x = self.final_layer_norm(x)
 
-        x = torch.gather(x_line_graph.reshape(batch,-1,dim), 1, src_selected_idx.unsqueeze(-1).repeat(1,1,dim))
-        x += embed_pos
-        x = x.transpose(0, 1)
-        
-        # END YOUR CODE
-        return x, x_line_graph
-
+        return x
 
 class TransformerDecoderLayer(nn.Module):
     """Decoder layer block.
